@@ -102,4 +102,4 @@ nats stream ls               # List JetStream streams
 
 ## License
 
-Proprietary — IO Interactive
+Proprietary — Distinguisher
