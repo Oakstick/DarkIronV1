@@ -1,0 +1,38 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+*.tsbuildinfo
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker
+nats-data/
+
+# Build artifacts
+*.wasm
+*.map
+
+# USD compiled
+*.usdc_bak
+
+# Logs
+*.log

@@ -1,0 +1,238 @@
+const fs = require('fs');
+const L = [];
+function w(s='') { L.push(s); }
+
+// === Types ===
+w('export interface MeshData { name: string; vertices: number[]; indices: number[]; transform?: { position?: number[]; rotation?: number[]; scale?: number[] }; }');
+w('export interface RendererConfig { canvas: HTMLCanvasElement; }');
+w('');
+
+// === Math ===
+w('function lookAt(e:number[],t:number[],u:number[]):Float32Array{');
+w('  const zx=e[0]-t[0],zy=e[1]-t[1],zz=e[2]-t[2],zl=Math.sqrt(zx*zx+zy*zy+zz*zz)||1;');
+w('  const z=[zx/zl,zy/zl,zz/zl];');
+w('  const xx=u[1]*z[2]-u[2]*z[1],xy=u[2]*z[0]-u[0]*z[2],xz=u[0]*z[1]-u[1]*z[0],xl=Math.sqrt(xx*xx+xy*xy+xz*xz)||1;');
+w('  const x=[xx/xl,xy/xl,xz/xl];');
+w('  const y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]];');
+w('  return new Float32Array([x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,');
+w('    -(x[0]*e[0]+x[1]*e[1]+x[2]*e[2]),-(y[0]*e[0]+y[1]*e[1]+y[2]*e[2]),-(z[0]*e[0]+z[1]*e[1]+z[2]*e[2]),1]);}');
+w('');
+w('function perspective(fov:number,a:number,n:number,f:number):Float32Array{');
+w('  const t=1/Math.tan(fov/2),nf=1/(n-f);');
+w('  return new Float32Array([t/a,0,0,0,0,t,0,0,0,0,f*nf,-1,0,0,f*n*nf,0]);}');
+w('');
+w('function mat4Mul(a:Float32Array,b:Float32Array):Float32Array{');
+w('  const r=new Float32Array(16);');
+w('  for(let i=0;i<4;i++)for(let j=0;j<4;j++)');
+w('    r[j*4+i]=a[i]*b[j*4]+a[4+i]*b[j*4+1]+a[8+i]*b[j*4+2]+a[12+i]*b[j*4+3];');
+w('  return r;}');
+w('');
+w('function mat4Identity():Float32Array{');
+w('  const m=new Float32Array(16);m[0]=m[5]=m[10]=m[15]=1;return m;}');
+w('');
+w('function mat4FromTRS(pos:number[],rot:number[],scl:number[]):Float32Array{');
+w('  // Euler angles (degrees) to rotation matrix, apply scale and translation');
+w('  const tx=pos[0],ty=pos[1],tz=pos[2];');
+w('  const sx=scl[0],sy=scl[1],sz=scl[2];');
+w('  const rx=rot[0]*Math.PI/180,ry=rot[1]*Math.PI/180,rz=rot[2]*Math.PI/180;');
+w('  const cx=Math.cos(rx),sx2=Math.sin(rx),cy=Math.cos(ry),sy2=Math.sin(ry),cz=Math.cos(rz),sz2=Math.sin(rz);');
+w('  return new Float32Array([');
+w('    cy*cz*sx, cx*cz*sy*sz2-sx2*sz2+cx*sz2*0, 0, 0,');
+w('    0,0,0,0, 0,0,0,0, 0,0,0,1');
+w('  ]);');
+w('}');
+
+// Actually let me use a simpler TRS that works correctly
+// Remove the broken one and replace
+L.length -= 8; // remove the bad mat4FromTRS
+
+w('function mat4FromTRS(pos:number[],rot:number[],scl:number[]):Float32Array{');
+w('  const m=mat4Identity();');
+w('  // Scale');
+w('  const s=mat4Identity();s[0]=scl[0];s[5]=scl[1];s[10]=scl[2];');
+w('  // Rotation Y (most common for scene layout)');
+w('  const ry=rot[1]*Math.PI/180;');
+w('  const cy=Math.cos(ry),sy=Math.sin(ry);');
+w('  const rym=mat4Identity();rym[0]=cy;rym[2]=sy;rym[8]=-sy;rym[10]=cy;');
+w('  // Rotation X');
+w('  const rx=rot[0]*Math.PI/180;');
+w('  const cx=Math.cos(rx),sxr=Math.sin(rx);');
+w('  const rxm=mat4Identity();rxm[5]=cx;rxm[6]=sxr;rxm[9]=-sxr;rxm[10]*=cx; // fix: rxm[10]=cx');
+w('  // Actually let me just do a proper euler rotation');
+w('  const rz=rot[2]*Math.PI/180;');
+w('  const cz=Math.cos(rz),sz=Math.sin(rz);');
+w('  // Combined rotation: Rz * Ry * Rx');
+w('  const r00=cy*cz, r01=cz*sxr*sy-cx*sz, r02=cx*cz*sy+sxr*sz;');
+w('  const r10=cy*sz, r11=cx*cz+sxr*sy*sz, r12=cx*sy*sz-cz*sxr;');
+w('  const r20=-sy,   r21=cy*sxr,           r22=cx*cy;');
+w('  return new Float32Array([');
+w('    r00*scl[0],r10*scl[0],r20*scl[0],0,');
+w('    r01*scl[1],r11*scl[1],r21*scl[1],0,');
+w('    r02*scl[2],r12*scl[2],r22*scl[2],0,');
+w('    pos[0],pos[1],pos[2],1]);');
+w('}');
+w('');
+
+// === Camera ===
+w('class OrbitalCamera{');
+w('  theta=Math.PI*0.25;phi=Math.PI*0.35;radius=5.0;target=[0,0.5,0];');
+w('  get eye():[number,number,number]{');
+w('    const sp=Math.sin(this.phi),cp=Math.cos(this.phi),st=Math.sin(this.theta),ct=Math.cos(this.theta);');
+w('    return[this.target[0]+this.radius*sp*ct,this.target[1]+this.radius*cp,this.target[2]+this.radius*sp*st];}');
+w('  orbit(dx:number,dy:number){this.theta-=dx*0.01;this.phi=Math.max(0.1,Math.min(Math.PI-0.1,this.phi-dy*0.01));}');
+w('  pan(dx:number,dy:number){const s=this.radius*0.002,st=Math.sin(this.theta),ct=Math.cos(this.theta);');
+w('    this.target[0]+=(-st*dx)*s;this.target[1]+=dy*s;this.target[2]+=(ct*dx)*s;}');
+w('  zoom(d:number){this.radius=Math.max(0.5,Math.min(50,this.radius*(1+d*0.001)));}');
+w('  viewProj(a:number):Float32Array{return mat4Mul(perspective(Math.PI/4,a,0.01,100),lookAt(this.eye,this.target as any,[0,1,0]));}');
+w('}');
+w('');
+
+// === Grid + Axis generators ===
+w('function genGrid(size:number,div:number):{v:Float32Array;n:number}{');
+w('  const step=size/div,half=size/2,d:number[]=[];');
+w('  for(let i=0;i<=div;i++){const p=-half+i*step;if(Math.abs(p)<0.001)continue;const g=0.25;');
+w('    d.push(-half,0,p,g,g,g, half,0,p,g,g,g, p,0,-half,g,g,g, p,0,half,g,g,g);}');
+w('  return{v:new Float32Array(d),n:d.length/6};}');
+w('');
+w('function genAxis(len:number):{v:Float32Array;n:number}{');
+w('  const d:number[]=[];');
+w('  d.push(0,0,0,1,0.2,0.2, len,0,0,1,0.2,0.2);');
+w('  d.push(0,0,0,0.2,1,0.2, 0,len,0,0.2,1,0.2);');
+w('  d.push(0,0,0,0.3,0.3,1, 0,0,len,0.3,0.3,1);');
+w('  return{v:new Float32Array(d),n:d.length/6};}');
+w('');
+
+// === Shaders ===
+w('const MESH_SHADER=`');
+w('struct Uniforms{viewProj:mat4x4f,model:mat4x4f}');
+w('@group(0)@binding(0)var<uniform> u:Uniforms;');
+w('struct VI{@location(0)p:vec3f,@location(1)n:vec3f,@location(2)c:vec3f}');
+w('struct VO{@builtin(position)p:vec4f,@location(0)c:vec3f,@location(1)n:vec3f}');
+w('@vertex fn vs(i:VI)->VO{var o:VO;let wp=u.model*vec4f(i.p,1.0);o.p=u.viewProj*wp;o.c=i.c;');
+w('  o.n=normalize((u.model*vec4f(i.n,0.0)).xyz);return o;}');
+w('@fragment fn fs(i:VO)->@location(0)vec4f{let ld=normalize(vec3f(0.5,1.0,0.8));');
+w('  let lit=0.3+max(dot(normalize(i.n),ld),0.0)*0.7;return vec4f(i.c*lit,1.0);}`;');
+w('');
+w('const LINE_SHADER=`');
+w('struct Uniforms{viewProj:mat4x4f,model:mat4x4f}');
+w('@group(0)@binding(0)var<uniform> u:Uniforms;');
+w('struct VI{@location(0)p:vec3f,@location(1)c:vec3f}');
+w('struct VO{@builtin(position)p:vec4f,@location(0)c:vec3f}');
+w('@vertex fn vs(i:VI)->VO{var o:VO;o.p=u.viewProj*vec4f(i.p,1.0);o.c=i.c;return o;}');
+w('@fragment fn fs(i:VO)->@location(0)vec4f{return vec4f(i.c,1.0);}`;');
+w('');
+
+// === GPU Mesh object ===
+w('interface GPUMesh{name:string;vBuf:GPUBuffer;iBuf:GPUBuffer;iCount:number;model:Float32Array;}');
+w('');
+
+// === Renderer ===
+w('export class DarkIronRenderer{');
+w('  private dev:GPUDevice|null=null;private ctx:GPUCanvasContext|null=null;');
+w('  private meshPipe:GPURenderPipeline|null=null;private linePipe:GPURenderPipeline|null=null;');
+w('  private depthTex:GPUTexture|null=null;private uBuf:GPUBuffer|null=null;');
+w('  private bg:GPUBindGroup|null=null;');
+w('  private meshes:GPUMesh[]=[];');
+w('  private gridBuf:GPUBuffer|null=null;private gridN=0;');
+w('  private axisBuf:GPUBuffer|null=null;private axisN=0;');
+w('  private cam=new OrbitalCamera();');
+w('  constructor(private config:RendererConfig){}');
+w('');
+w('  async initialize():Promise<boolean>{');
+w('    if(!navigator.gpu)return false;');
+w('    const adapter=await navigator.gpu.requestAdapter({powerPreference:"high-performance"});');
+w('    if(!adapter)return false;');
+w('    this.dev=await adapter.requestDevice();');
+w('    this.ctx=this.config.canvas.getContext("webgpu") as GPUCanvasContext;');
+w('    const fmt=navigator.gpu.getPreferredCanvasFormat();');
+w('    this.ctx.configure({device:this.dev,format:fmt,alphaMode:"premultiplied"});');
+w('    // Uniform: viewProj(64) + model(64) = 128 bytes');
+w('    this.uBuf=this.dev.createBuffer({size:128,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});');
+w('    const bgl=this.dev.createBindGroupLayout({entries:[{binding:0,visibility:GPUShaderStage.VERTEX,buffer:{type:"uniform"}}]});');
+w('    this.bg=this.dev.createBindGroup({layout:bgl,entries:[{binding:0,resource:{buffer:this.uBuf}}]});');
+w('    const layout=this.dev.createPipelineLayout({bindGroupLayouts:[bgl]});');
+w('    const ms=this.dev.createShaderModule({code:MESH_SHADER});');
+w('    this.meshPipe=this.dev.createRenderPipeline({layout,');
+w('      vertex:{module:ms,entryPoint:"vs",buffers:[{arrayStride:36,attributes:[');
+w('        {shaderLocation:0,offset:0,format:"float32x3"},{shaderLocation:1,offset:12,format:"float32x3"},{shaderLocation:2,offset:24,format:"float32x3"}]}]},');
+w('      fragment:{module:ms,entryPoint:"fs",targets:[{format:fmt}]},');
+w('      primitive:{topology:"triangle-list",cullMode:"none"},');
+w('      depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"}});');
+w('    const ls=this.dev.createShaderModule({code:LINE_SHADER});');
+w('    this.linePipe=this.dev.createRenderPipeline({layout,');
+w('      vertex:{module:ls,entryPoint:"vs",buffers:[{arrayStride:24,attributes:[');
+w('        {shaderLocation:0,offset:0,format:"float32x3"},{shaderLocation:1,offset:12,format:"float32x3"}]}]},');
+w('      fragment:{module:ls,entryPoint:"fs",targets:[{format:fmt}]},');
+w('      primitive:{topology:"line-list"},');
+w('      depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"}});');
+w('    const grid=genGrid(10,20);');
+w('    this.gridBuf=this.dev.createBuffer({size:grid.v.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});');
+w('    this.dev.queue.writeBuffer(this.gridBuf,0,grid.v);this.gridN=grid.n;');
+w('    const axis=genAxis(1.5);');
+w('    this.axisBuf=this.dev.createBuffer({size:axis.v.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});');
+w('    this.dev.queue.writeBuffer(this.axisBuf,0,axis.v);this.axisN=axis.n;');
+w('    this.depthTex=this.dev.createTexture({size:[this.config.canvas.width,this.config.canvas.height],format:"depth24plus",usage:GPUTextureUsage.RENDER_ATTACHMENT});');
+w('    const c=this.config.canvas;let drag=false,btn=0,lx=0,ly=0;');
+w('    c.addEventListener("mousedown",e=>{drag=true;btn=e.button;lx=e.clientX;ly=e.clientY;e.preventDefault();});');
+w('    window.addEventListener("mousemove",e=>{if(!drag)return;const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;');
+w('      if(btn===0)this.cam.orbit(dx,dy);else this.cam.pan(dx,dy);});');
+w('    window.addEventListener("mouseup",()=>{drag=false;});');
+w('    c.addEventListener("wheel",e=>{this.cam.zoom(e.deltaY);e.preventDefault();},{passive:false});');
+w('    c.addEventListener("contextmenu",e=>e.preventDefault());');
+w('    console.log("[DarkIron Renderer] Initialized (WebGPU)");return true;}');
+w('');
+w('  get meshCount():number{return this.meshes.length;}');
+w('');
+w('  uploadMesh(mesh:MeshData):void{');
+w('    if(!this.dev)throw new Error("Not init");');
+w('    const v=new Float32Array(mesh.vertices),idx=new Uint32Array(mesh.indices);');
+w('    const vBuf=this.dev.createBuffer({size:v.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});');
+w('    this.dev.queue.writeBuffer(vBuf,0,v);');
+w('    const iBuf=this.dev.createBuffer({size:idx.byteLength,usage:GPUBufferUsage.INDEX|GPUBufferUsage.COPY_DST});');
+w('    this.dev.queue.writeBuffer(iBuf,0,idx);');
+w('    const t=mesh.transform||{};');
+w('    const pos=t.position||[0,0,0],rot=t.rotation||[0,0,0],scl=t.scale||[1,1,1];');
+w('    const model=mat4FromTRS(pos,rot,scl);');
+w('    // Replace mesh with same name, or add new');
+w('    const existing=this.meshes.findIndex(m=>m.name===mesh.name);');
+w('    if(existing>=0){this.meshes[existing].vBuf.destroy();this.meshes[existing].iBuf.destroy();');
+w('      this.meshes[existing]={name:mesh.name,vBuf,iBuf,iCount:idx.length,model};}');
+w('    else{this.meshes.push({name:mesh.name,vBuf,iBuf,iCount:idx.length,model});}');
+w('    console.log("[DarkIron Renderer] Uploaded mesh: "+mesh.name+" ("+idx.length+" indices, "+this.meshes.length+" total)");}');
+w('');
+w('  clearMeshes():void{for(const m of this.meshes){m.vBuf.destroy();m.iBuf.destroy();}this.meshes=[];}');
+w('');
+w('  render():void{');
+w('    if(!this.dev||!this.ctx||!this.meshPipe||!this.linePipe||!this.depthTex||!this.uBuf||!this.bg)return;');
+w('    const a=this.config.canvas.width/this.config.canvas.height;');
+w('    const vp=this.cam.viewProj(a);');
+w('    const enc=this.dev.createCommandEncoder();');
+w('    const pass=enc.beginRenderPass({');
+w('      colorAttachments:[{view:this.ctx.getCurrentTexture().createView(),clearValue:{r:0.08,g:0.08,b:0.10,a:1},loadOp:"clear",storeOp:"store"}],');
+w('      depthStencilAttachment:{view:this.depthTex.createView(),depthClearValue:1.0,depthLoadOp:"clear",depthStoreOp:"store"}});');
+w('    // Grid + axis (identity model matrix)');
+w('    this.dev.queue.writeBuffer(this.uBuf,0,vp);');
+w('    this.dev.queue.writeBuffer(this.uBuf,64,mat4Identity());');
+w('    if(this.gridBuf){pass.setPipeline(this.linePipe);pass.setBindGroup(0,this.bg);pass.setVertexBuffer(0,this.gridBuf);pass.draw(this.gridN);}');
+w('    if(this.axisBuf){pass.setPipeline(this.linePipe);pass.setBindGroup(0,this.bg);pass.setVertexBuffer(0,this.axisBuf);pass.draw(this.axisN);}');
+w('    // Meshes with per-object model matrices');
+w('    for(const m of this.meshes){');
+w('      this.dev.queue.writeBuffer(this.uBuf,64,m.model);');
+w('      pass.setPipeline(this.meshPipe);pass.setBindGroup(0,this.bg);');
+w('      pass.setVertexBuffer(0,m.vBuf);pass.setIndexBuffer(m.iBuf,"uint32");pass.drawIndexed(m.iCount);}');
+w('    pass.end();this.dev.queue.submit([enc.finish()]);}');
+w('');
+w('  destroy():void{this.clearMeshes();this.uBuf?.destroy();this.depthTex?.destroy();');
+w('    this.gridBuf?.destroy();this.axisBuf?.destroy();this.dev?.destroy();');
+w('    console.log("[DarkIron Renderer] Destroyed");}');
+w('}');
+
+fs.writeFileSync('D:/DarkIron/darkiron/packages/renderer/src/index.ts', L.join('\n'));
+const c = fs.readFileSync('D:/DarkIron/darkiron/packages/renderer/src/index.ts','utf8');
+console.log('Lines:', c.split('\n').length);
+console.log('Has mat4FromTRS:', c.includes('mat4FromTRS'));
+console.log('Has meshes array:', c.includes('meshes:GPUMesh[]'));
+console.log('Has per-object model:', c.includes('m.model'));
+console.log('Has clearMeshes:', c.includes('clearMeshes'));
+console.log('Has meshCount:', c.includes('meshCount'));
+

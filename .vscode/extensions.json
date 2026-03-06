@@ -1,0 +1,13 @@
+{
+  "recommendations": [
+    "rust-lang.rust-analyzer",
+    "biomejs.biome",
+    "tamasfe.even-better-toml",
+    "ggsimm.wgsl",
+    "ms-azuretools.vscode-docker",
+    "ms-vscode-remote.remote-containers",
+    "task.vscode-task",
+    "fill-labs.dependi",
+    "bradlc.vscode-tailwindcss"
+  ]
+}

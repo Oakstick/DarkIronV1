@@ -1,0 +1,13 @@
+[package]
+name = "darkiron-transport"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-nats.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+bytes = "1"
+futures = "0.3"
+

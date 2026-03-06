@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head><title>NATS Test</title></head>
+<body style="background:#1a1a1a;color:#fff;font-family:monospace;padding:20px">
+<h2>NATS WebSocket Test</h2>
+<pre id="log"></pre>
+<script type="module">
+import { connect, StringCodec } from "https://cdn.jsdelivr.net/npm/nats.ws@1.29.2/+esm";
+
+const log = document.getElementById("log");
+function print(msg) {
+  log.textContent += new Date().toISOString().substr(11,12) + " " + msg + "\n";
+  console.log(msg);
+}
+
+try {
+  print("Connecting to ws://localhost:9222...");
+  const nc = await connect({ servers: "ws://localhost:9222" });
+  print("Connected!");
+
+  const sc = StringCodec();
+
+  // Subscribe
+  const sub = nc.subscribe("test.>");
+  print("Subscribed to test.>");
+
+  // Process messages
+  (async () => {
+    for await (const msg of sub) {
+      const data = sc.decode(msg.data);
+      print("RECEIVED on " + msg.subject + ": " + data);
+    }
+    print("Sub loop ended");
+  })();
+
+  // Self-test after 1 second
+  setTimeout(() => {
+    print("Publishing test message...");
+    nc.publish("test.hello", sc.encode("world"));
+    print("Published! If you see RECEIVED above, NATS works.");
+  }, 1000);
+
+} catch (e) {
+  print("ERROR: " + e.message);
+}
+</script>
+</body>
+</html>
+

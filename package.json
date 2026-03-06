@@ -1,0 +1,19 @@
+{
+  "name": "darkiron",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "biome check packages/",
+    "format": "biome format --write packages/"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "nats": "^2.29.3"
+  }
+}

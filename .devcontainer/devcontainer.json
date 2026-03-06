@@ -1,0 +1,48 @@
+{
+  "name": "DarkIron Engine Dev",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "latest",
+      "profile": "default"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22",
+      "pnpmVersion": "9"
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "biomejs.biome",
+        "tamasfe.even-better-toml",
+        "ggsimm.wgsl",
+        "ms-azuretools.vscode-docker",
+        "task.vscode-task",
+        "bradlc.vscode-tailwindcss"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "forwardPorts": [
+    4222,
+    9222,
+    8222,
+    5173
+  ],
+  "portsAttributes": {
+    "4222": { "label": "NATS Client" },
+    "9222": { "label": "NATS WebSocket" },
+    "8222": { "label": "NATS Monitor" },
+    "5173": { "label": "Editor (Vite)" }
+  },
+  "postCreateCommand": "task setup",
+  "remoteUser": "vscode"
+}

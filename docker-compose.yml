@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  nats:
+    image: nats:2.10-alpine
+    container_name: darkiron-nats
+    command: ["-c", "/etc/nats/nats-server.conf"]
+    ports:
+      - "4222:4222"
+      - "9222:9222"
+      - "8222:8222"
+    volumes:
+      - nats-data:/data
+      - ./infra/nats/nats-server.conf:/etc/nats/nats-server.conf:ro
+    restart: unless-stopped
+
+volumes:
+  nats-data:
+    driver: local

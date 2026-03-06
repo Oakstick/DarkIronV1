@@ -1,0 +1,22 @@
+[package]
+name = "darkiron-runtime"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "darkiron"
+path = "src/main.rs"
+
+[dependencies]
+darkiron-transport = { path = "../darkiron-transport" }
+# darkiron-usd = { path = "../darkiron-usd" }    # Enable when USD integration begins
+# darkiron-cook = { path = "../darkiron-cook" }   # Enable when asset pipeline begins
+
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+notify.workspace = true

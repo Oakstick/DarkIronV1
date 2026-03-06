@@ -1,0 +1,106 @@
+# DarkIron Engine — NATS Subject Registry
+#
+# This file is the SINGLE SOURCE OF TRUTH for all NATS subjects.
+# CI validates that all published/subscribed subjects match entries here.
+#
+# Format: [subject.pattern]
+# publisher = "service name"
+# consumers = ["service1", "service2"]
+# description = "What this subject carries"
+# schema = "FlatBuffers table name or 'json' for temporary JSON payloads"
+
+# ─── Scene Events ────────────────────────────────────────────
+
+[scene."{session_id}".loaded]
+publisher = "runtime"
+consumers = ["renderer", "editor", "ai-gateway"]
+description = "Full scene loaded — contains all mesh data for initial render"
+schema = "SceneLoaded"
+
+[scene."{session_id}".delta.transform]
+publisher = "runtime"
+consumers = ["renderer", "editor"]
+description = "One or more prim transforms changed"
+schema = "TransformChanged"
+
+[scene."{session_id}".delta.prim_created]
+publisher = "runtime"
+consumers = ["renderer", "editor", "ai-gateway"]
+description = "New prim added to scene graph"
+schema = "PrimCreated"
+
+[scene."{session_id}".delta.prim_deleted]
+publisher = "runtime"
+consumers = ["renderer", "editor"]
+description = "Prim removed from scene graph"
+schema = "PrimDeleted"
+
+# ─── Editor Commands ─────────────────────────────────────────
+
+[scene."{session_id}".edit.transform]
+publisher = "editor"
+consumers = ["runtime"]
+description = "User moved/rotated/scaled a prim via gizmo"
+schema = "TransformChanged"
+
+[scene."{session_id}".edit.select]
+publisher = "editor"
+consumers = ["runtime", "presence"]
+description = "User selected one or more prims"
+schema = "json"
+
+[scene."{session_id}".edit.create_prim]
+publisher = "editor"
+consumers = ["runtime"]
+description = "User requested new prim creation"
+schema = "json"
+
+[scene."{session_id}".edit.delete_prim]
+publisher = "editor"
+consumers = ["runtime"]
+description = "User requested prim deletion"
+schema = "json"
+
+# ─── Asset Pipeline ──────────────────────────────────────────
+
+[asset."{session_id}".cooked]
+publisher = "runtime"
+consumers = ["renderer"]
+description = "Asset cooking complete — GPU-ready data available"
+schema = "AssetCooked"
+
+[asset."{session_id}".reload]
+publisher = "runtime"
+consumers = ["renderer"]
+description = "Hot reload triggered — asset changed on disk"
+schema = "json"
+
+# ─── Presence ────────────────────────────────────────────────
+
+[presence."{session_id}"."{user_id}"]
+publisher = "editor"
+consumers = ["editor", "presence"]
+description = "User presence heartbeat (camera pos, selection, tool)"
+schema = "json"
+
+# ─── AI Services ─────────────────────────────────────────────
+
+[ai.task."{task_type}"]
+publisher = "editor"
+consumers = ["ai-gateway"]
+description = "AI task request (scene generation, QA, material suggestion)"
+schema = "json"
+
+[ai.result."{task_id}"]
+publisher = "ai-gateway"
+consumers = ["editor", "runtime"]
+description = "AI task result"
+schema = "json"
+
+# ─── System ──────────────────────────────────────────────────
+
+[system.health."{service}"]
+publisher = "*"
+consumers = ["monitoring"]
+description = "Service health check heartbeat"
+schema = "json"

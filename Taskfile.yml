@@ -1,0 +1,157 @@
+# https://taskfile.dev
+version: "3"
+
+vars:
+  NATS_URL: "nats://localhost:4222"
+  NATS_WS_URL: "ws://localhost:9222"
+  NATS_MONITOR: "http://localhost:8222"
+
+tasks:
+  # ─── Full Stack ───────────────────────────────────────────────
+
+  dev:
+    desc: Start the entire DarkIron stack (NATS + runtime + editor)
+    deps: [nats]
+    cmds:
+      - task: runtime &
+      - task: editor
+
+  setup:
+    desc: First-time setup — install all dependencies
+    cmds:
+      - echo "🔧 Installing Rust dependencies..."
+      - cargo build --workspace
+      - echo "🔧 Installing Node dependencies..."
+      - pnpm install
+      - echo "🔧 Pulling NATS Docker image..."
+      - docker compose pull
+      - echo "✅ Setup complete. Run 'task dev' to start."
+
+  # ─── NATS ─────────────────────────────────────────────────────
+
+  nats:
+    desc: Start NATS server via Docker Compose
+    cmds:
+      - docker compose up -d nats
+      - echo "✅ NATS running — client:4222 | websocket:9222 | monitor:{{.NATS_MONITOR}}"
+
+  nats:stop:
+    desc: Stop NATS server
+    cmds:
+      - docker compose down
+
+  nats:logs:
+    desc: Tail NATS server logs
+    cmds:
+      - docker compose logs -f nats
+
+  nats:monitor:
+    desc: Open NATS monitoring dashboard
+    cmds:
+      - echo "Opening {{.NATS_MONITOR}}"
+      # Windows
+      - cmd /c start {{.NATS_MONITOR}} 2>/dev/null || true
+      # macOS
+      - open {{.NATS_MONITOR}} 2>/dev/null || true
+
+  # ─── Rust Runtime ─────────────────────────────────────────────
+
+  runtime:
+    desc: Build and run the native runtime
+    dir: crates/darkiron-runtime
+    env:
+      NATS_URL: "{{.NATS_URL}}"
+      RUST_LOG: "info,darkiron=debug"
+    cmds:
+      - cargo run
+
+  runtime:build:
+    desc: Build runtime (debug)
+    cmds:
+      - cargo build --workspace
+
+  runtime:release:
+    desc: Build runtime (optimized release)
+    cmds:
+      - cargo build --workspace --release
+
+  # ─── Browser Editor ──────────────────────────────────────────
+
+  editor:
+    desc: Start the Vite dev server for the editor
+    dir: packages/editor
+    env:
+      VITE_NATS_WS_URL: "{{.NATS_WS_URL}}"
+    cmds:
+      - pnpm run dev
+
+  editor:build:
+    desc: Production build of the editor
+    dir: packages/editor
+    cmds:
+      - pnpm run build
+
+  # ─── Schemas ──────────────────────────────────────────────────
+
+  schemas:
+    desc: Regenerate FlatBuffers bindings (Rust + TypeScript)
+    cmds:
+      - echo "🔧 Generating FlatBuffers bindings..."
+      - echo "TODO — flatc codegen will be configured in Phase 1"
+      - echo "   flatc --rust -o schemas/generated/rust/ schemas/flatbuffers/*.fbs"
+      - echo "   flatc --ts  -o schemas/generated/ts/  schemas/flatbuffers/*.fbs"
+
+  # ─── Testing ──────────────────────────────────────────────────
+
+  test:
+    desc: Run all test suites
+    cmds:
+      - task: test:rust
+      - task: test:ts
+
+  test:rust:
+    desc: Run Rust tests
+    cmds:
+      - cargo test --workspace
+
+  test:ts:
+    desc: Run TypeScript tests
+    cmds:
+      - pnpm -r run test
+
+  # ─── Linting & Formatting ────────────────────────────────────
+
+  lint:
+    desc: Lint all code
+    cmds:
+      - cargo clippy --workspace -- -D warnings
+      - pnpm biome check packages/
+
+  fmt:
+    desc: Format all code
+    cmds:
+      - cargo fmt --all
+      - pnpm biome format --write packages/
+
+  fmt:check:
+    desc: Check formatting without modifying
+    cmds:
+      - cargo fmt --all --check
+      - pnpm biome format packages/
+
+  # ─── Benchmarks ──────────────────────────────────────────────
+
+  bench:
+    desc: Run performance benchmarks
+    cmds:
+      - cargo bench --workspace
+
+  # ─── Cleanup ──────────────────────────────────────────────────
+
+  clean:
+    desc: Clean all build artifacts
+    cmds:
+      - cargo clean
+      - pnpm -r run clean 2>/dev/null || true
+      - docker compose down -v
+      - echo "✅ Cleaned."
