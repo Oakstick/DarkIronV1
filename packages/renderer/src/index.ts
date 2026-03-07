@@ -1,33 +1,24 @@
-// TODO: Extract lookAt, perspective, mat4Mul, mat4Identity, mat4FromTRS
-// into a dedicated math utility module (e.g., utils/mat4.ts) or replace with gl-matrix.
-export interface MeshData { name: string; vertices: number[]; indices: number[]; transform?: { position?: number[]; rotation?: number[]; scale?: number[] }; }
-export interface RendererConfig { canvas: HTMLCanvasElement; }
+/**
+ * @darkiron/renderer
+ *
+ * WebGPU-based 3D renderer for the DarkIron Engine.
+ * Handles mesh upload, orbital camera, grid/axis helpers, and frame rendering.
+ */
 
-function lookAt(e:number[],t:number[],u:number[]):Float32Array{
-  const zx=e[0]-t[0],zy=e[1]-t[1],zz=e[2]-t[2],zl=Math.sqrt(zx*zx+zy*zy+zz*zz)||1;
-  const z=[zx/zl,zy/zl,zz/zl];
-  const xx=u[1]*z[2]-u[2]*z[1],xy=u[2]*z[0]-u[0]*z[2],xz=u[0]*z[1]-u[1]*z[0],xl=Math.sqrt(xx*xx+xy*xy+xz*xz)||1;
-  const x=[xx/xl,xy/xl,xz/xl];const y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]];
-  return new Float32Array([x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,
-    -(x[0]*e[0]+x[1]*e[1]+x[2]*e[2]),-(y[0]*e[0]+y[1]*e[1]+y[2]*e[2]),-(z[0]*e[0]+z[1]*e[1]+z[2]*e[2]),1]);}
+import { lookAt, perspective, mat4Mul, mat4Identity, mat4FromTRS } from './utils/mat4';
+import MESH_SHADER_SRC from '../../../shaders/mesh.wgsl?raw';
+import LINE_SHADER_SRC from '../../../shaders/line.wgsl?raw';
 
-function perspective(fov:number,a:number,n:number,f:number):Float32Array{
-  const t=1/Math.tan(fov/2),nf=1/(n-f);return new Float32Array([t/a,0,0,0,0,t,0,0,0,0,f*nf,-1,0,0,f*n*nf,0]);}
+export interface MeshData {
+  name: string;
+  vertices: number[];
+  indices: number[];
+  transform?: { position?: number[]; rotation?: number[]; scale?: number[] };
+}
 
-function mat4Mul(a:Float32Array,b:Float32Array):Float32Array{
-  const r=new Float32Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++)
-    r[j*4+i]=a[i]*b[j*4]+a[4+i]*b[j*4+1]+a[8+i]*b[j*4+2]+a[12+i]*b[j*4+3];return r;}
-
-function mat4Identity():Float32Array{const m=new Float32Array(16);m[0]=m[5]=m[10]=m[15]=1;return m;}
-
-function mat4FromTRS(pos:number[],rot:number[],scl:number[]):Float32Array{
-  const rx=rot[0]*Math.PI/180,ry=rot[1]*Math.PI/180,rz=rot[2]*Math.PI/180;
-  const cx=Math.cos(rx),sx=Math.sin(rx),cy=Math.cos(ry),sy=Math.sin(ry),cz=Math.cos(rz),sz=Math.sin(rz);
-  const r00=cy*cz,r01=cz*sx*sy-cx*sz,r02=cx*cz*sy+sx*sz;
-  const r10=cy*sz,r11=cx*cz+sx*sy*sz,r12=cx*sy*sz-cz*sx;
-  const r20=-sy,r21=cy*sx,r22=cx*cy;
-  return new Float32Array([r00*scl[0],r10*scl[0],r20*scl[0],0,r01*scl[1],r11*scl[1],r21*scl[1],0,
-    r02*scl[2],r12*scl[2],r22*scl[2],0,pos[0],pos[1],pos[2],1]);}
+export interface RendererConfig {
+  canvas: HTMLCanvasElement;
+}
 
 class OrbitalCamera{
   theta=Math.PI*0.25;phi=Math.PI*0.35;radius=5.0;target=[0,0.5,0];
@@ -50,23 +41,7 @@ function genAxis(len:number):{v:Float32Array;n:number}{const d:number[]=[];
   d.push(0,0,0,1,0.2,0.2, len,0,0,1,0.2,0.2);d.push(0,0,0,0.2,1,0.2, 0,len,0,0.2,1,0.2);
   d.push(0,0,0,0.3,0.3,1, 0,0,len,0.3,0.3,1);return{v:new Float32Array(d),n:d.length/6};}
 
-const MESH_SHADER=`
-struct Uniforms{viewProj:mat4x4f,model:mat4x4f}
-@group(0)@binding(0)var<uniform> u:Uniforms;
-struct VI{@location(0)p:vec3f,@location(1)n:vec3f,@location(2)c:vec3f}
-struct VO{@builtin(position)p:vec4f,@location(0)c:vec3f,@location(1)n:vec3f}
-@vertex fn vs(i:VI)->VO{var o:VO;let wp=u.model*vec4f(i.p,1.0);o.p=u.viewProj*wp;o.c=i.c;
-  o.n=normalize((u.model*vec4f(i.n,0.0)).xyz);return o;}
-@fragment fn fs(i:VO)->@location(0)vec4f{let ld=normalize(vec3f(0.5,1.0,0.8));
-  let lit=0.3+max(dot(normalize(i.n),ld),0.0)*0.7;return vec4f(i.c*lit,1.0);}`;
 
-const LINE_SHADER=`
-struct Uniforms{viewProj:mat4x4f,model:mat4x4f}
-@group(0)@binding(0)var<uniform> u:Uniforms;
-struct VI{@location(0)p:vec3f,@location(1)c:vec3f}
-struct VO{@builtin(position)p:vec4f,@location(0)c:vec3f}
-@vertex fn vs(i:VI)->VO{var o:VO;o.p=u.viewProj*vec4f(i.p,1.0);o.c=i.c;return o;}
-@fragment fn fs(i:VO)->@location(0)vec4f{return vec4f(i.c,1.0);}`;
 
 interface GPUMesh{name:string;vBuf:GPUBuffer;iBuf:GPUBuffer;iCount:number;model:Float32Array;}
 
@@ -88,12 +63,12 @@ export class DarkIronRenderer{
     const bgl=this.dev.createBindGroupLayout({entries:[{binding:0,visibility:GPUShaderStage.VERTEX,buffer:{type:"uniform"}}]});
     this.bg=this.dev.createBindGroup({layout:bgl,entries:[{binding:0,resource:{buffer:this.uBuf}}]});
     const lay=this.dev.createPipelineLayout({bindGroupLayouts:[bgl]});
-    const ms=this.dev.createShaderModule({code:MESH_SHADER});
+    const ms=this.dev.createShaderModule({code:MESH_SHADER_SRC});
     this.meshPipe=this.dev.createRenderPipeline({layout:lay,vertex:{module:ms,entryPoint:"vs",buffers:[{arrayStride:36,attributes:[
       {shaderLocation:0,offset:0,format:"float32x3"},{shaderLocation:1,offset:12,format:"float32x3"},{shaderLocation:2,offset:24,format:"float32x3"}]}]},
       fragment:{module:ms,entryPoint:"fs",targets:[{format:fmt}]},primitive:{topology:"triangle-list",cullMode:"back"},
       depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"}});
-    const ls=this.dev.createShaderModule({code:LINE_SHADER});
+    const ls=this.dev.createShaderModule({code:LINE_SHADER_SRC});
     this.linePipe=this.dev.createRenderPipeline({layout:lay,vertex:{module:ls,entryPoint:"vs",buffers:[{arrayStride:24,attributes:[
       {shaderLocation:0,offset:0,format:"float32x3"},{shaderLocation:1,offset:12,format:"float32x3"}]}]},
       fragment:{module:ls,entryPoint:"fs",targets:[{format:fmt}]},primitive:{topology:"line-list"},
