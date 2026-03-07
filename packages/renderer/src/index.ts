@@ -28,14 +28,14 @@ function mat4FromTRS(pos:number[],rot:number[],scl:number[]):Float32Array{
     r02*scl[2],r12*scl[2],r22*scl[2],0,pos[0],pos[1],pos[2],1]);}
 
 class OrbitalCamera{
-  theta=Math.PI*0.25;phi=Math.PI*0.35;radius=5.0;target=[0,0.5,0];
+  theta=Math.PI*0.25;phi=Math.PI*0.35;radius=0.8;target=[0,0.03,0];
   get eye():[number,number,number]{const sp=Math.sin(this.phi),cp=Math.cos(this.phi),st=Math.sin(this.theta),ct=Math.cos(this.theta);
     return[this.target[0]+this.radius*sp*ct,this.target[1]+this.radius*cp,this.target[2]+this.radius*sp*st];}
   orbit(dx:number,dy:number){this.theta-=dx*0.01;this.phi=Math.max(0.1,Math.min(Math.PI-0.1,this.phi-dy*0.01));}
   pan(dx:number,dy:number){const s=this.radius*0.002,st=Math.sin(this.theta),ct=Math.cos(this.theta);
     this.target[0]+=(-st*dx)*s;this.target[1]+=dy*s;this.target[2]+=(ct*dx)*s;}
-  zoom(d:number){this.radius=Math.max(0.5,Math.min(50,this.radius*(1+d*0.001)));}
-  viewProj(a:number):Float32Array{return mat4Mul(perspective(Math.PI/4,a,0.01,100),lookAt(this.eye,this.target as any,[0,1,0]));}
+  zoom(d:number){this.radius=Math.max(0.1,Math.min(20,this.radius*(1+d*0.001)));}
+  viewProj(a:number):Float32Array{return mat4Mul(perspective(Math.PI/6,a,0.001,50),lookAt(this.eye,this.target as any,[0,1,0]));}
 }
 
 function genGrid(size:number,div:number):{v:Float32Array;n:number}{
@@ -96,10 +96,10 @@ export class DarkIronRenderer{
       {shaderLocation:0,offset:0,format:"float32x3"},{shaderLocation:1,offset:12,format:"float32x3"}]}]},
       fragment:{module:ls,entryPoint:"fs",targets:[{format:fmt}]},primitive:{topology:"line-list"},
       depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"}});
-    const grid=genGrid(10,20);
+    const grid=genGrid(1,20);
     this.gridBuf=this.dev.createBuffer({size:grid.v.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
     this.dev.queue.writeBuffer(this.gridBuf,0,grid.v);this.gridN=grid.n;
-    const axis=genAxis(1.5);
+    const axis=genAxis(0.2);
     this.axisBuf=this.dev.createBuffer({size:axis.v.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
     this.dev.queue.writeBuffer(this.axisBuf,0,axis.v);this.axisN=axis.n;
     this.depthTex=this.dev.createTexture({size:[this.config.canvas.width,this.config.canvas.height],format:"depth24plus",usage:GPUTextureUsage.RENDER_ATTACHMENT});
