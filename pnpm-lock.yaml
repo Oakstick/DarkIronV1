@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      nats:
-        specifier: ^2.29.3
-        version: 2.29.3
     devDependencies:
       '@biomejs/biome':
         specifier: ^1.9.0
@@ -27,9 +23,6 @@ importers:
       '@darkiron/transport':
         specifier: workspace:*
         version: link:../transport
-      nats.ws:
-        specifier: ^1.30.3
-        version: 1.30.3
       react:
         specifier: ^19.0.0
         version: 19.2.4
@@ -1010,10 +1003,6 @@ packages:
 
   nats.ws@1.30.3:
     resolution: {integrity: sha512-aM77V2SEc+B6lbxCMZK3qfRy4jg8pmHj+wZzQKDiDIQYhLPj6U2NSHHBex0syj72Ayzl4uR5Lp3aKXTaVLbRpw==}
-
-  nats@2.29.3:
-    resolution: {integrity: sha512-tOQCRCwC74DgBTk4pWZ9V45sk4d7peoE2njVprMRCBXrhJ5q5cYM7i6W+Uvw2qUrcfOSnuisrX7bEx3b3Wx4QA==}
-    engines: {node: '>= 14.0.0'}
 
   nkeys.js@1.1.0:
     resolution: {integrity: sha512-tB/a0shZL5UZWSwsoeyqfTszONTt4k2YS0tuQioMOD180+MbombYVgzDUYHlx+gejYK6rgf08n/2Df99WY0Sxg==}
@@ -2104,13 +2093,10 @@ snapshots:
     optionalDependencies:
       nkeys.js: 1.1.0
 
-  nats@2.29.3:
-    dependencies:
-      nkeys.js: 1.1.0
-
   nkeys.js@1.1.0:
     dependencies:
       tweetnacl: 1.0.3
+    optional: true
 
   node-releases@2.0.27: {}
 
@@ -2316,7 +2302,8 @@ snapshots:
 
   ts-interface-checker@0.1.13: {}
 
-  tweetnacl@1.0.3: {}
+  tweetnacl@1.0.3:
+    optional: true
 
   typescript@5.9.3: {}
 
