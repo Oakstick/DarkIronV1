@@ -1,0 +1,124 @@
+---
+# NATS ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nats-config
+  namespace: darkiron
+data:
+  nats-server.conf: |
+    server_name: darkiron
+    port: 4222
+    max_payload: 16MB
+    http_port: 8222
+
+    websocket {
+      port: 9222
+      no_tls: true
+    }
+
+    jetstream {
+      store_dir: /data
+      max_mem: 256MB
+      max_file: 1GB
+    }
+
+    # TODO: Add authentication
+    # authorization {
+    #   users = [
+    #     { user: "runtime", password: "$RUNTIME_PASS" }
+    #     { user: "editor", password: "$EDITOR_PASS" }
+    #   ]
+    # }
+
+---
+# NATS StatefulSet (JetStream needs persistent storage)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nats
+  namespace: darkiron
+  labels:
+    app.kubernetes.io/name: nats
+    app.kubernetes.io/part-of: darkiron
+spec:
+  serviceName: nats
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nats
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nats
+    spec:
+      containers:
+        - name: nats
+          image: nats:2.10-alpine
+          args: ["-c", "/etc/nats/nats-server.conf"]
+          ports:
+            - containerPort: 4222
+              name: client
+            - containerPort: 9222
+              name: websocket
+            - containerPort: 8222
+              name: monitor
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nats
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8222
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8222
+            initialDelaySeconds: 3
+            periodSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: nats-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+
+---
+# NATS Service (internal)
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats
+  namespace: darkiron
+spec:
+  selector:
+    app.kubernetes.io/name: nats
+  ports:
+    - port: 4222
+      targetPort: 4222
+      name: client
+    - port: 9222
+      targetPort: 9222
+      name: websocket
+    - port: 8222
+      targetPort: 8222
+      name: monitor
+  clusterIP: None  # Headless for StatefulSet
+
