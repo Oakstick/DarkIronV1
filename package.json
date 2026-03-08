@@ -12,5 +12,8 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.0",
     "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "flatbuffers": "^25.9.23"
   }
 }

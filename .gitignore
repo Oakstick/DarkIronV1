@@ -36,3 +36,6 @@ nats-data/
 
 # Logs
 *.log
+
+__pycache__/
+*.pyc
