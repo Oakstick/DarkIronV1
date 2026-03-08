@@ -1,5 +1,5 @@
 #![deny(clippy::all)]
-#![allow(clippy::too_many_lines)]
+// TODO: Refactor into scene_manager.rs and asset_watcher.rs modules
 
 use anyhow::Result;
 use darkiron_transport::DarkIronTransport;
@@ -67,9 +67,12 @@ async fn main() -> Result<()> {
     let session_id = Uuid::new_v4().to_string();
     info!(session = %session_id, "Session started");
 
-    // Wait for editor to connect and subscribe
-    info!("Waiting 1s for editor connections...");
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    // TODO: Replace with proper readiness handshake (editor publishes "client_ready",
+    // runtime waits for it). Using configurable delay as interim solution.
+    let startup_delay_ms: u64 = std::env::var("DARKIRON_STARTUP_DELAY_MS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1000);
+    info!(delay_ms = startup_delay_ms, "Waiting for editor connections...");
+    tokio::time::sleep(std::time::Duration::from_millis(startup_delay_ms)).await;
 
     // Assets directory
     let assets_dir = PathBuf::from(std::env::var("DARKIRON_ASSETS").unwrap_or_else(|_| "assets".into()));
@@ -141,9 +144,12 @@ async fn main() -> Result<()> {
                 match load_scene_file(&changed_path, &session_id) {
                     Ok(scene) => {
                         let subject = format!("scene.{}.loaded", session_id);
-                        match transport.publish(&subject, &serde_json::to_vec(&scene).unwrap_or_default()).await {
-                            Ok(()) => info!(file = %changed_path.display(), "Hot reload complete"),
-                            Err(e) => error!(error = %e, "Failed to publish reloaded scene"),
+                        match serde_json::to_vec(&scene) {
+                            Ok(payload) => match transport.publish(&subject, &payload).await {
+                                Ok(()) => info!(file = %changed_path.display(), "Hot reload complete"),
+                                Err(e) => error!(error = %e, "Failed to publish reloaded scene"),
+                            },
+                            Err(e) => error!(error = %e, file = %changed_path.display(), "Failed to serialize scene — skipping publish"),
                         }
                     }
                     Err(e) => warn!(file = %changed_path.display(), error = %e, "Failed to reload scene"),

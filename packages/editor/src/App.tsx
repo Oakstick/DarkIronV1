@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { DarkIronRenderer } from "@darkiron/renderer";
-import { connect, StringCodec } from "nats.ws";
+import { DarkIronRenderer, type MeshData } from "@darkiron/renderer";
+import { createTransport, type DarkIronTransport } from "@darkiron/transport";
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -10,8 +10,8 @@ export function App() {
 
   useEffect(() => {
     let renderer: DarkIronRenderer | null = null;
+    let transport: DarkIronTransport | null = null;
     let destroyed = false;
-    let nc: any = null;
 
     async function init() {
       try {
@@ -24,40 +24,23 @@ export function App() {
           return;
         }
 
-        console.log("[Editor] Connecting to NATS...");
-        nc = await connect({ servers: "ws://localhost:9222" });
-        console.log("[Editor] NATS connected, nc=", nc);
-        if (destroyed) { nc.close(); return; }
+        console.log("[Editor] Connecting via DarkIronTransport...");
+        transport = await createTransport("ws://localhost:9222");
+        if (destroyed) { transport.disconnect(); return; }
         setStatus("connected");
 
-        const sc = StringCodec();
-
-        // Subscribe to scene events
-        const sub = nc.subscribe("scene.*.loaded");
-        console.log("[Editor] Subscribed, sub=", sub);
-
-        // Process messages in async loop
-        (async () => {
-          console.log("[Editor] Entering message loop...");
-          try {
-            for await (const msg of sub) {
-              console.log("[Editor] GOT MSG:", msg.subject);
-              const payload = JSON.parse(sc.decode(msg.data));
-              if (payload.meshes && renderer) {
-                for (const mesh of payload.meshes) {
-                  console.log("[Editor] Uploading:", mesh.name);
-                  renderer.uploadMesh(mesh);
-                  setMsgCount(renderer.meshCount);
-                }
-              }
+        // Subscribe to scene events via the transport wrapper
+        await transport.subscribe("scene.*.loaded", (_subject, payload) => {
+          const data = payload as { meshes?: MeshData[] };
+          if (data.meshes && renderer) {
+            for (const mesh of data.meshes) {
+              console.log("[Editor] Uploading:", mesh.name);
+              renderer.uploadMesh(mesh);
+              setMsgCount(renderer.meshCount);
             }
-          } catch (e) {
-            console.error("[Editor] Loop error:", e);
           }
-          console.log("[Editor] Loop exited");
-        })();
+        });
 
-        
         // Render loop
         function frame() {
           if (destroyed) return;
@@ -78,7 +61,7 @@ export function App() {
     return () => {
       destroyed = true;
       renderer?.destroy();
-      nc?.drain().catch(() => {});
+      transport?.disconnect().catch(() => {});
     };
   }, []);
 

@@ -1,3 +1,5 @@
+// TODO: Extract lookAt, perspective, mat4Mul, mat4Identity, mat4FromTRS
+// into a dedicated math utility module (e.g., utils/mat4.ts) or replace with gl-matrix.
 export interface MeshData { name: string; vertices: number[]; indices: number[]; transform?: { position?: number[]; rotation?: number[]; scale?: number[] }; }
 export interface RendererConfig { canvas: HTMLCanvasElement; }
 
@@ -89,7 +91,7 @@ export class DarkIronRenderer{
     const ms=this.dev.createShaderModule({code:MESH_SHADER});
     this.meshPipe=this.dev.createRenderPipeline({layout:lay,vertex:{module:ms,entryPoint:"vs",buffers:[{arrayStride:36,attributes:[
       {shaderLocation:0,offset:0,format:"float32x3"},{shaderLocation:1,offset:12,format:"float32x3"},{shaderLocation:2,offset:24,format:"float32x3"}]}]},
-      fragment:{module:ms,entryPoint:"fs",targets:[{format:fmt}]},primitive:{topology:"triangle-list",cullMode:"none"},
+      fragment:{module:ms,entryPoint:"fs",targets:[{format:fmt}]},primitive:{topology:"triangle-list",cullMode:"back"},
       depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"}});
     const ls=this.dev.createShaderModule({code:LINE_SHADER});
     this.linePipe=this.dev.createRenderPipeline({layout:lay,vertex:{module:ls,entryPoint:"vs",buffers:[{arrayStride:24,attributes:[
@@ -129,7 +131,13 @@ export class DarkIronRenderer{
   clearMeshes():void{for(const m of this.meshes){m.vBuf.destroy();m.iBuf.destroy();}this.meshes=[];}
   render():void{
     if(!this.dev||!this.ctx||!this.meshPipe||!this.linePipe||!this.depthTex||!this.uBuf||!this.bg)return;
-    const vp=this.cam.viewProj(this.config.canvas.width/this.config.canvas.height);
+    // Recreate depth texture if canvas size changed
+    const cw=this.config.canvas.width,ch=this.config.canvas.height;
+    if(this.depthTex.width!==cw||this.depthTex.height!==ch){
+      this.depthTex.destroy();
+      this.depthTex=this.dev.createTexture({size:[cw,ch],format:"depth24plus",usage:GPUTextureUsage.RENDER_ATTACHMENT});
+    }
+    const vp=this.cam.viewProj(cw/ch);
     const enc=this.dev.createCommandEncoder();
     const pass=enc.beginRenderPass({colorAttachments:[{view:this.ctx.getCurrentTexture().createView(),
       clearValue:{r:0.08,g:0.08,b:0.10,a:1},loadOp:"clear",storeOp:"store"}],
