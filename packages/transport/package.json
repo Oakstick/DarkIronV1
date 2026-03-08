@@ -11,6 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "flatbuffers": "^25.9.23",
     "nats.ws": "^1.29.0"
   },
   "devDependencies": {

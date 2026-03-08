@@ -1,21 +1,18 @@
 // DarkIron Engine — Scene Event Schema
 //
-// This is the source of truth for all scene events transmitted
-// over NATS between the runtime and browser client.
-//
-// After modifying this file, run: task schemas
-// This generates Rust and TypeScript bindings in schemas/generated/
+// Source of truth for all scene events over NATS.
+// After modifying: run `task schemas` to regenerate bindings.
 
 namespace darkiron.schema;
 
-/// A 3D vector (position, normal, etc.)
+/// A 3D vector (position, normal, etc.) — f32 matches WebGPU
 struct Vec3 {
   x: float;
   y: float;
   z: float;
 }
 
-/// RGBA color
+/// RGBA color (f32, 0.0–1.0 range)
 struct Color {
   r: float;
   g: float;
@@ -23,23 +20,16 @@ struct Color {
   a: float;
 }
 
-/// 4x4 transformation matrix (column-major)
+/// 4x4 transformation matrix (column-major, f32)
 table Transform {
   matrix: [float]; // 16 elements, column-major
-}
-
-/// A single vertex with interleaved attributes
-struct Vertex {
-  position: Vec3;
-  normal: Vec3;
-  color: Vec3;
 }
 
 /// Mesh geometry data ready for GPU upload
 table MeshData {
   name: string;
   vertices: [float];   // Interleaved: pos(3) + normal(3) + color(3) per vertex
-  indices: [uint16];
+  indices: [uint32];   // Changed from uint16 — meshes can exceed 65K vertices
 }
 
 /// Published when a scene is fully loaded and ready for rendering
@@ -48,18 +38,18 @@ table SceneLoaded {
   meshes: [MeshData];
 }
 
-/// Published when a prim's transform changes (editor gizmo, physics, etc.)
+/// Published when a prim's transform changes
 table TransformChanged {
   session_id: string;
   prim_path: string;
   transform: Transform;
 }
 
-/// Published when a new prim is created in the scene
+/// Published when a new prim is created
 table PrimCreated {
   session_id: string;
   prim_path: string;
-  prim_type: string;    // e.g., "Mesh", "Camera", "Light"
+  prim_type: string;
   parent_path: string;
 }
 
@@ -69,15 +59,15 @@ table PrimDeleted {
   prim_path: string;
 }
 
-/// Published when a cooked asset is ready for the renderer
+/// Published when a cooked asset is ready
 table AssetCooked {
   session_id: string;
   asset_name: string;
-  asset_hash: string;   // Content hash for cache invalidation
+  asset_hash: string;
   size_bytes: uint64;
 }
 
-/// Wrapper for all scene events (union dispatch)
+/// Union dispatch for all scene events
 union SceneEventPayload {
   SceneLoaded,
   TransformChanged,
@@ -86,9 +76,11 @@ union SceneEventPayload {
   AssetCooked,
 }
 
+/// Root message wrapper
 table SceneEvent {
   payload: SceneEventPayload;
   timestamp_ms: uint64;
 }
 
 root_type SceneEvent;
+
