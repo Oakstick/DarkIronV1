@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: darkiron-editor
+  namespace: darkiron
+  labels:
+    app.kubernetes.io/name: editor
+    app.kubernetes.io/part-of: darkiron
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: editor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: editor
+    spec:
+      containers:
+        - name: editor
+          image: ghcr.io/oakstick/darkironv1/editor:${IMAGE_TAG}
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: darkiron-editor
+  namespace: darkiron
+spec:
+  selector:
+    app.kubernetes.io/name: editor
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http
+
+---
+# Ingress — expose editor and NATS WebSocket externally
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: darkiron-ingress
+  namespace: darkiron
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Enable WebSocket support for NATS
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: darkiron.example.com  # TODO: Replace with actual domain
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: darkiron-editor
+                port:
+                  number: 80
+          - path: /nats
+            pathType: Prefix
+            backend:
+              service:
+                name: nats
+                port:
+                  number: 9222
+
