@@ -33,7 +33,7 @@ impl AssetWatcher {
                 match event.kind {
                     EventKind::Create(_) | EventKind::Modify(_) => {
                         for path in event.paths {
-                            if path.extension().is_some_and(|e| e == "json") {
+                            if path.extension().is_some_and(|e| e == "json" || e == "usdc" || e == "usda" || e == "usd") {
                                 let _ = tx.send(path);
                             }
                         }

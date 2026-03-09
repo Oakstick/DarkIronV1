@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 darkiron-transport = { path = "../darkiron-transport" }
-# darkiron-usd = { path = "../darkiron-usd" }    # Enable when USD integration begins
+darkiron-usd = { path = "../darkiron-usd" }
 # darkiron-cook = { path = "../darkiron-cook" }   # Enable when asset pipeline begins
 
 tokio.workspace = true
@@ -21,3 +21,4 @@ serde.workspace = true
 serde_json.workspace = true
 notify.workspace = true
 flatbuffers.workspace = true
+
