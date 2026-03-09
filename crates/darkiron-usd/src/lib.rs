@@ -81,7 +81,6 @@ fn get_double3(value: &sdf::Value) -> Option<[f64; 3]> {
 }
 
 /// Read a prim-level field (e.g., typeName, primChildren).
-
 fn get_prim_field(reader: &mut dyn AbstractData, prim: &str, field: &str) -> Option<sdf::Value> {
     let path = sdf::Path::new(prim).ok()?;
 
@@ -89,7 +88,6 @@ fn get_prim_field(reader: &mut dyn AbstractData, prim: &str, field: &str) -> Opt
 }
 
 /// Read a property value (e.g., points, normals) using dot-syntax path.
-
 fn get_property(reader: &mut dyn AbstractData, prim: &str, prop: &str) -> Option<sdf::Value> {
     let prop_path = sdf::Path::new(&format!("{prim}.{prop}")).ok()?;
 
@@ -100,7 +98,6 @@ fn get_property(reader: &mut dyn AbstractData, prim: &str, prop: &str) -> Option
 }
 
 /// 4x4 matrix (column-major) identity.
-
 fn mat4_identity() -> [f64; 16] {
     [
         1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
@@ -108,7 +105,6 @@ fn mat4_identity() -> [f64; 16] {
 }
 
 /// Multiply two 4x4 matrices (column-major).
-
 fn mat4_mul(a: &[f64; 16], b: &[f64; 16]) -> [f64; 16] {
     let mut r = [0.0_f64; 16];
 
@@ -122,7 +118,6 @@ fn mat4_mul(a: &[f64; 16], b: &[f64; 16]) -> [f64; 16] {
 }
 
 /// Build a translation matrix.
-
 fn mat4_translate(t: [f64; 3]) -> [f64; 16] {
     let mut m = mat4_identity();
 
@@ -134,7 +129,6 @@ fn mat4_translate(t: [f64; 3]) -> [f64; 16] {
 }
 
 /// Build a scale matrix.
-
 fn mat4_scale(s: [f64; 3]) -> [f64; 16] {
     let mut m = mat4_identity();
 
@@ -146,7 +140,6 @@ fn mat4_scale(s: [f64; 3]) -> [f64; 16] {
 }
 
 /// Build a rotation matrix from Euler angles (XYZ order, degrees).
-
 fn mat4_rotate_xyz(angles: [f64; 3]) -> [f64; 16] {
     let (rx, ry, rz) = (
         angles[0].to_radians(),
@@ -183,7 +176,6 @@ fn mat4_rotate_xyz(angles: [f64; 3]) -> [f64; 16] {
 }
 
 /// Transform a 3D point by a 4x4 matrix (with w=1 perspective divide).
-
 fn mat4_transform_point(m: &[f64; 16], p: [f64; 3]) -> [f64; 3] {
     let w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
 
@@ -197,7 +189,6 @@ fn mat4_transform_point(m: &[f64; 16], p: [f64; 3]) -> [f64; 3] {
 }
 
 /// Transform a 3D direction by the upper-left 3x3 of a matrix (no translation).
-
 fn mat4_transform_dir(m: &[f64; 16], d: [f64; 3]) -> [f64; 3] {
     [
         m[0] * d[0] + m[4] * d[1] + m[8] * d[2],
@@ -207,7 +198,6 @@ fn mat4_transform_dir(m: &[f64; 16], d: [f64; 3]) -> [f64; 3] {
 }
 
 /// Normalize a 3D vector.
-
 fn vec3_normalize(v: [f64; 3]) -> [f64; 3] {
     let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
 
@@ -219,7 +209,6 @@ fn vec3_normalize(v: [f64; 3]) -> [f64; 3] {
 }
 
 /// Compute the local transform matrix for a single prim from its xformOps.
-
 fn compute_prim_transform(reader: &mut dyn AbstractData, prim_path: &str) -> [f64; 16] {
     let mut m = mat4_identity();
 
@@ -268,6 +257,7 @@ fn compute_prim_transform(reader: &mut dyn AbstractData, prim_path: &str) -> [f6
 
 /// Compute the transform matrix for a prim relative to a given ancestor.
 /// Only composes transforms from (but not including) `from_path` down to `prim_path`.
+#[allow(dead_code)]
 fn compute_relative_matrix(
     reader: &mut dyn AbstractData,
     prim_path: &str,
@@ -288,7 +278,6 @@ fn compute_relative_matrix(
 }
 
 /// Compute the world transform matrix for a prim by composing ancestor transforms.
-
 fn compute_world_matrix(reader: &mut dyn AbstractData, mesh_path: &str) -> [f64; 16] {
     let mut world = mat4_identity();
 
@@ -308,7 +297,6 @@ fn compute_world_matrix(reader: &mut dyn AbstractData, mesh_path: &str) -> [f64;
 }
 
 /// Extract mesh geometry from a prim path with an optional additional transform.
-
 fn extract_mesh_with_transform(
     reader: &mut dyn AbstractData,
 
@@ -433,13 +421,11 @@ fn extract_mesh_with_transform(
 }
 
 /// Extract mesh geometry from a prim path (no extra transform).
-
 fn extract_mesh(reader: &mut dyn AbstractData, path: &str) -> Option<ExtractedMesh> {
     extract_mesh_with_transform(reader, path, None, None)
 }
 
 /// Resolve a PointInstancer: clone prototype meshes at each instance position.
-
 fn resolve_point_instancer(
     reader: &mut dyn AbstractData,
 
@@ -556,7 +542,6 @@ fn resolve_point_instancer(
 }
 
 /// Recursively find all Mesh and PointInstancer prims.
-
 fn find_meshes(
     reader: &mut dyn AbstractData,
 
@@ -606,7 +591,6 @@ fn find_meshes(
 }
 
 /// Find all PointInstancer prims.
-
 fn find_point_instancers(
     reader: &mut dyn AbstractData,
 
@@ -650,7 +634,6 @@ fn find_point_instancers(
 }
 
 /// Load a pre-flattened USD file and extract all mesh geometry.
-
 pub fn load_stage(path: &Path) -> Result<Vec<ExtractedMesh>> {
     info!(path = %path.display(), "Loading USD stage");
 
