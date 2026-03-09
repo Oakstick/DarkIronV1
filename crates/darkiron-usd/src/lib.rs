@@ -368,6 +368,23 @@ fn compute_prim_transform(reader: &mut dyn AbstractData, prim_path: &str) -> [f6
 
 
 
+/// Compute the transform matrix for a prim relative to a given ancestor.
+/// Only composes transforms from (but not including) `from_path` down to `prim_path`.
+fn compute_relative_matrix(reader: &mut dyn AbstractData, prim_path: &str, from_path: &str) -> [f64; 16] {
+    let mut rel = mat4_identity();
+    let parts: Vec<&str> = prim_path.split('/').filter(|p| !p.is_empty()).collect();
+    let from_parts: Vec<&str> = from_path.split('/').filter(|p| !p.is_empty()).collect();
+
+    // Start composing from the level after from_path
+    for i in (from_parts.len() + 1)..=parts.len() {
+        let ancestor = format!("/{}", parts[..i].join("/"));
+        let local = compute_prim_transform(reader, &ancestor);
+        rel = mat4_mul(&rel, &local);
+    }
+
+    rel
+}
+
 /// Compute the world transform matrix for a prim by composing ancestor transforms.
 
 fn compute_world_matrix(reader: &mut dyn AbstractData, mesh_path: &str) -> [f64; 16] {
