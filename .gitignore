@@ -39,3 +39,6 @@ nats-data/
 
 __pycache__/
 *.pyc
+
+# Large exported scene files
+chess-set-scene.json
