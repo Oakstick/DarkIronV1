@@ -15,10 +15,13 @@ mod schema;
 
 use schema::darkiron::schema as fb;
 
+/// Face definition: (normal, color, 4 vertex positions).
+type CubeFace = ([f32; 3], [f32; 3], [[f32; 3]; 4]);
+
 /// Build a colored unit cube scene as FlatBuffers bytes.
 pub fn build_cube_scene(session_id: &str) -> Vec<u8> {
     let s: f32 = 0.5;
-    let faces: Vec<([f32; 3], [f32; 3], [[f32; 3]; 4])> = vec![
+    let faces: Vec<CubeFace> = vec![
         (
             [0.0, 0.0, 1.0],
             [1.0, 0.2, 0.2],
