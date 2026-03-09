@@ -7,3 +7,9 @@ edition.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+anyhow.workspace = true
+openusd = "0.1"
+flatbuffers.workspace = true
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
