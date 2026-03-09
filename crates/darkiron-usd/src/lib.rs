@@ -68,6 +68,13 @@ fn get_property(reader: &mut dyn AbstractData, prim: &str, prop: &str) -> Option
 }
 
 /// Accumulate translations from ancestor prims.
+///
+/// LIMITATION: Only handles xformOp:translate. Does NOT handle rotations,
+/// scales, pivot points, or full xformOpOrder stacks. This will cause
+/// incorrect placement for USD assets with complex transforms.
+/// TODO(phase2-followup): Implement full 4x4 matrix composition from
+/// xformOpOrder (translate, rotateXYZ, scale, transform) to support
+/// arbitrary USD transform stacks.
 fn collect_translation(reader: &mut dyn AbstractData, mesh_path: &str) -> [f32; 3] {
     let mut total = [0.0_f64; 3];
     let parts: Vec<&str> = mesh_path.split('/').filter(|p| !p.is_empty()).collect();
