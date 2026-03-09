@@ -6,7 +6,7 @@
 use anyhow::Result;
 use darkiron_transport::DarkIronTransport;
 use std::path::Path;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // Include the generated FlatBuffers code
 #[path = "../../../schemas/generated/rust/scene_generated.rs"]
@@ -19,12 +19,36 @@ use schema::darkiron::schema as fb;
 pub fn build_cube_scene(session_id: &str) -> Vec<u8> {
     let s: f32 = 0.5;
     let faces: Vec<([f32; 3], [f32; 3], [[f32; 3]; 4])> = vec![
-        ([0.0, 0.0, 1.0], [1.0, 0.2, 0.2], [[-s, -s, s], [s, -s, s], [s, s, s], [-s, s, s]]),
-        ([0.0, 0.0, -1.0], [0.2, 1.0, 1.0], [[s, -s, -s], [-s, -s, -s], [-s, s, -s], [s, s, -s]]),
-        ([1.0, 0.0, 0.0], [0.2, 1.0, 0.2], [[s, -s, s], [s, -s, -s], [s, s, -s], [s, s, s]]),
-        ([-1.0, 0.0, 0.0], [1.0, 0.2, 1.0], [[-s, -s, -s], [-s, -s, s], [-s, s, s], [-s, s, -s]]),
-        ([0.0, 1.0, 0.0], [1.0, 1.0, 0.2], [[-s, s, s], [s, s, s], [s, s, -s], [-s, s, -s]]),
-        ([0.0, -1.0, 0.0], [0.2, 0.2, 1.0], [[-s, -s, -s], [s, -s, -s], [s, -s, s], [-s, -s, s]]),
+        (
+            [0.0, 0.0, 1.0],
+            [1.0, 0.2, 0.2],
+            [[-s, -s, s], [s, -s, s], [s, s, s], [-s, s, s]],
+        ),
+        (
+            [0.0, 0.0, -1.0],
+            [0.2, 1.0, 1.0],
+            [[s, -s, -s], [-s, -s, -s], [-s, s, -s], [s, s, -s]],
+        ),
+        (
+            [1.0, 0.0, 0.0],
+            [0.2, 1.0, 0.2],
+            [[s, -s, s], [s, -s, -s], [s, s, -s], [s, s, s]],
+        ),
+        (
+            [-1.0, 0.0, 0.0],
+            [1.0, 0.2, 1.0],
+            [[-s, -s, -s], [-s, -s, s], [-s, s, s], [-s, s, -s]],
+        ),
+        (
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.2],
+            [[-s, s, s], [s, s, s], [s, s, -s], [-s, s, -s]],
+        ),
+        (
+            [0.0, -1.0, 0.0],
+            [0.2, 0.2, 1.0],
+            [[-s, -s, -s], [s, -s, -s], [s, -s, s], [-s, -s, s]],
+        ),
     ];
 
     let mut vertices: Vec<f32> = Vec::new();
@@ -51,28 +75,37 @@ fn meshes_to_flatbuffers(session_id: &str, meshes: &[(&str, &[f32], &[u32])]) ->
         let name = builder.create_string(name_str);
         let verts_vec = builder.create_vector(verts);
         let idx_vec = builder.create_vector(idxs);
-        let mesh = fb::MeshData::create(&mut builder, &fb::MeshDataArgs {
-            name: Some(name),
-            vertices: Some(verts_vec),
-            indices: Some(idx_vec),
-        });
+        let mesh = fb::MeshData::create(
+            &mut builder,
+            &fb::MeshDataArgs {
+                name: Some(name),
+                vertices: Some(verts_vec),
+                indices: Some(idx_vec),
+            },
+        );
         mesh_offsets.push(mesh);
     }
 
     let sid = builder.create_string(session_id);
     let meshes_vec = builder.create_vector(&mesh_offsets);
-    let scene = fb::SceneLoaded::create(&mut builder, &fb::SceneLoadedArgs {
-        session_id: Some(sid),
-        meshes: Some(meshes_vec),
-    });
-    let event = fb::SceneEvent::create(&mut builder, &fb::SceneEventArgs {
-        payload_type: fb::SceneEventPayload::SceneLoaded,
-        payload: Some(scene.as_union_value()),
-        timestamp_ms: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64,
-    });
+    let scene = fb::SceneLoaded::create(
+        &mut builder,
+        &fb::SceneLoadedArgs {
+            session_id: Some(sid),
+            meshes: Some(meshes_vec),
+        },
+    );
+    let event = fb::SceneEvent::create(
+        &mut builder,
+        &fb::SceneEventArgs {
+            payload_type: fb::SceneEventPayload::SceneLoaded,
+            payload: Some(scene.as_union_value()),
+            timestamp_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        },
+    );
     builder.finish(event, None);
     builder.finished_data().to_vec()
 }
@@ -82,10 +115,10 @@ pub fn load_usd_file(path: &Path, session_id: &str) -> Result<Vec<Vec<u8>>> {
     info!(file = %path.display(), "Loading USD via darkiron-usd...");
     let extracted = darkiron_usd::load_stage(path)?;
 
-
     let mut payloads = Vec::new();
     for chunk in extracted.chunks(3) {
-        let mesh_data: Vec<(&str, &[f32], &[u32])> = chunk.iter()
+        let mesh_data: Vec<(&str, &[f32], &[u32])> = chunk
+            .iter()
             .map(|m| (m.name.as_str(), m.vertices.as_slice(), m.indices.as_slice()))
             .collect();
         payloads.push(meshes_to_flatbuffers(session_id, &mesh_data));
@@ -99,43 +132,69 @@ pub fn load_scene_file(path: &Path, session_id: &str) -> Result<Vec<u8>> {
     let content = std::fs::read_to_string(path)?;
     let scene: serde_json::Value = serde_json::from_str(&content)?;
 
-    let meshes = scene.get("meshes")
+    let meshes = scene
+        .get("meshes")
         .and_then(|m| m.as_array())
         .ok_or_else(|| anyhow::anyhow!("No meshes array in scene file"))?;
 
     let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024 * 1024);
     let mut mesh_offsets = Vec::new();
     for mesh_val in meshes {
-        let name_str = mesh_val.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+        let name_str = mesh_val
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown");
         let name = builder.create_string(name_str);
-        let verts: Vec<f32> = mesh_val.get("vertices")
+        let verts: Vec<f32> = mesh_val
+            .get("vertices")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_f64().map(|f| f as f32))
+                    .collect()
+            })
             .unwrap_or_default();
-        let idxs: Vec<u32> = mesh_val.get("indices")
+        let idxs: Vec<u32> = mesh_val
+            .get("indices")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|i| i as u32)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_u64().map(|i| i as u32))
+                    .collect()
+            })
             .unwrap_or_default();
         let verts_vec = builder.create_vector(&verts);
         let idx_vec = builder.create_vector(&idxs);
-        let mesh = fb::MeshData::create(&mut builder, &fb::MeshDataArgs {
-            name: Some(name), vertices: Some(verts_vec), indices: Some(idx_vec),
-        });
+        let mesh = fb::MeshData::create(
+            &mut builder,
+            &fb::MeshDataArgs {
+                name: Some(name),
+                vertices: Some(verts_vec),
+                indices: Some(idx_vec),
+            },
+        );
         mesh_offsets.push(mesh);
     }
     let sid = builder.create_string(session_id);
     let meshes_vec = builder.create_vector(&mesh_offsets);
-    let scene_loaded = fb::SceneLoaded::create(&mut builder, &fb::SceneLoadedArgs {
-        session_id: Some(sid), meshes: Some(meshes_vec),
-    });
-    let event = fb::SceneEvent::create(&mut builder, &fb::SceneEventArgs {
-        payload_type: fb::SceneEventPayload::SceneLoaded,
-        payload: Some(scene_loaded.as_union_value()),
-        timestamp_ms: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64,
-    });
+    let scene_loaded = fb::SceneLoaded::create(
+        &mut builder,
+        &fb::SceneLoadedArgs {
+            session_id: Some(sid),
+            meshes: Some(meshes_vec),
+        },
+    );
+    let event = fb::SceneEvent::create(
+        &mut builder,
+        &fb::SceneEventArgs {
+            payload_type: fb::SceneEventPayload::SceneLoaded,
+            payload: Some(scene_loaded.as_union_value()),
+            timestamp_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        },
+    );
     builder.finish(event, None);
     Ok(builder.finished_data().to_vec())
 }
@@ -189,15 +248,13 @@ pub async fn load_and_publish_assets(
             }
         } else if path.extension().is_some_and(|e| e == "json") {
             match load_scene_file(&path, session_id) {
-                Ok(payload) => {
-                    match publish_scene(transport, &subject, &payload).await {
-                        Ok(()) => {
-                            info!(file = %path.display(), bytes = payload.len(), "Published JSON scene");
-                            any_loaded = true;
-                        }
-                        Err(e) => error!(file = %path.display(), error = %e, "Failed to publish"),
+                Ok(payload) => match publish_scene(transport, &subject, &payload).await {
+                    Ok(()) => {
+                        info!(file = %path.display(), bytes = payload.len(), "Published JSON scene");
+                        any_loaded = true;
                     }
-                }
+                    Err(e) => error!(file = %path.display(), error = %e, "Failed to publish"),
+                },
                 Err(e) => warn!(file = %path.display(), error = %e, "Failed to load JSON"),
             }
         }
@@ -207,11 +264,7 @@ pub async fn load_and_publish_assets(
 }
 
 /// Hot-reload: re-read changed file, convert, publish.
-pub async fn hot_reload(
-    transport: &DarkIronTransport,
-    changed_path: &Path,
-    session_id: &str,
-) {
+pub async fn hot_reload(transport: &DarkIronTransport, changed_path: &Path, session_id: &str) {
     let subject = format!("scene.{session_id}.loaded");
 
     if is_usd_file(changed_path) {
@@ -228,12 +281,12 @@ pub async fn hot_reload(
         }
     } else {
         match load_scene_file(changed_path, session_id) {
-            Ok(payload) => {
-                match publish_scene(transport, &subject, &payload).await {
-                    Ok(()) => info!(file = %changed_path.display(), bytes = payload.len(), "Hot reload complete"),
-                    Err(e) => error!(file = %changed_path.display(), error = %e, "Failed to publish"),
+            Ok(payload) => match publish_scene(transport, &subject, &payload).await {
+                Ok(()) => {
+                    info!(file = %changed_path.display(), bytes = payload.len(), "Hot reload complete")
                 }
-            }
+                Err(e) => error!(file = %changed_path.display(), error = %e, "Failed to publish"),
+            },
             Err(e) => warn!(file = %changed_path.display(), error = %e, "Failed to reload"),
         }
     }

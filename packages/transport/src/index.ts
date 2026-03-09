@@ -5,11 +5,11 @@
  * All browser <-> runtime messaging MUST go through this package.
  */
 
-import { connect, type NatsConnection, type Subscription } from "nats.ws";
 import * as flatbuffers from "flatbuffers";
+import { type NatsConnection, type Subscription, connect } from "nats.ws";
 import { SceneEvent } from "../../../schemas/generated/ts/darkiron/schema/scene-event";
-import { SceneLoaded } from "../../../schemas/generated/ts/darkiron/schema/scene-loaded";
 import { SceneEventPayload } from "../../../schemas/generated/ts/darkiron/schema/scene-event-payload";
+import { SceneLoaded } from "../../../schemas/generated/ts/darkiron/schema/scene-loaded";
 
 export interface TransportConfig {
   url: string;
@@ -25,7 +25,7 @@ function decodeFlatBuffers(data: Uint8Array): unknown | null {
 
     if (event.payloadType() === SceneEventPayload.SceneLoaded) {
       const scene = event.payload(new SceneLoaded()) as SceneLoaded;
-      const meshes: Array<{name: string; vertices: number[]; indices: number[]}> = [];
+      const meshes: Array<{ name: string; vertices: number[]; indices: number[] }> = [];
 
       for (let i = 0; i < scene.meshesLength(); i++) {
         const mesh = scene.meshes(i);
@@ -116,4 +116,3 @@ export async function createTransport(url = "ws://localhost:9222"): Promise<Dark
   await transport.connect();
   return transport;
 }
-

@@ -38,13 +38,15 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(1000);
-    info!(delay_ms = startup_delay_ms, "Waiting for editor connections...");
+    info!(
+        delay_ms = startup_delay_ms,
+        "Waiting for editor connections..."
+    );
     tokio::time::sleep(std::time::Duration::from_millis(startup_delay_ms)).await;
 
     // Ensure assets directory exists
-    let assets_dir = PathBuf::from(
-        std::env::var("DARKIRON_ASSETS").unwrap_or_else(|_| "assets".into()),
-    );
+    let assets_dir =
+        PathBuf::from(std::env::var("DARKIRON_ASSETS").unwrap_or_else(|_| "assets".into()));
     if !assets_dir.exists() {
         std::fs::create_dir_all(&assets_dir)?;
         info!(path = %assets_dir.display(), "Created assets directory");
@@ -90,4 +92,3 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
-

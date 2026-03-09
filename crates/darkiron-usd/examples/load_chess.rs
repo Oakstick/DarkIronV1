@@ -18,11 +18,13 @@ fn main() {
 
             let total_tris: usize = meshes.iter().map(|m| m.indices.len() / 3).sum();
             let total_verts: usize = meshes.iter().map(|m| m.vertices.len() / 9).sum();
-            println!("Grand total: {} vertices, {} triangles", total_verts, total_tris);
+            println!(
+                "Grand total: {} vertices, {} triangles",
+                total_verts, total_tris
+            );
         }
         Err(e) => {
             eprintln!("Error: {e:?}");
         }
     }
 }
-

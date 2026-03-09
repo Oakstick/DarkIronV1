@@ -33,7 +33,9 @@ impl AssetWatcher {
                 match event.kind {
                     EventKind::Create(_) | EventKind::Modify(_) => {
                         for path in event.paths {
-                            if path.extension().is_some_and(|e| e == "json" || e == "usdc" || e == "usda" || e == "usd") {
+                            if path.extension().is_some_and(|e| {
+                                e == "json" || e == "usdc" || e == "usda" || e == "usd"
+                            }) {
                                 let _ = tx.send(path);
                             }
                         }
@@ -51,10 +53,7 @@ impl AssetWatcher {
         w.watch(assets_dir.as_ref(), RecursiveMode::Recursive)?;
         info!(path = %assets_dir.display(), "Watching assets for hot reload");
 
-        Ok(Self {
-            rx,
-            _watcher: w,
-        })
+        Ok(Self { rx, _watcher: w })
     }
 
     /// Drain any queued events (debounce helper).
@@ -65,4 +64,3 @@ impl AssetWatcher {
         while self.rx.try_recv().is_ok() {}
     }
 }
-

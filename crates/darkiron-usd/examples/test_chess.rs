@@ -13,7 +13,12 @@ fn main() {
             for mesh in &meshes {
                 let tris = mesh.indices.len() / 3;
                 total_tris += tris;
-                println!("  {} — {} verts, {} tris", mesh.name, mesh.vertices.len() / 9, tris);
+                println!(
+                    "  {} — {} verts, {} tris",
+                    mesh.name,
+                    mesh.vertices.len() / 9,
+                    tris
+                );
             }
             println!("\nTotal triangles: {}", total_tris);
         }
@@ -22,4 +27,3 @@ fn main() {
         }
     }
 }
-

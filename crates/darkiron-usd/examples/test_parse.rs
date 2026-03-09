@@ -6,7 +6,6 @@ fn main() {
     let meshes = darkiron_usd::extract_meshes(path).expect("Failed");
     println!("\nTotal: {} meshes", meshes.len());
     for (i, m) in meshes.iter().enumerate() {
-        println!("  [{:2}] {} ({} tris)", i+1, m.name, m.indices.len()/3);
+        println!("  [{:2}] {} ({} tris)", i + 1, m.name, m.indices.len() / 3);
     }
 }
-

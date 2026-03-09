@@ -39,11 +39,7 @@ export function mat4Mul(a: Float32Array, b: Float32Array): Float32Array {
  * @param target Look-at target [x, y, z]
  * @param up     World up vector [x, y, z]
  */
-export function lookAt(
-  eye: number[],
-  target: number[],
-  up: number[]
-): Float32Array {
+export function lookAt(eye: number[], target: number[], up: number[]): Float32Array {
   // Forward (z) = normalize(eye - target)
   const zx = eye[0] - target[0];
   const zy = eye[1] - target[1];
@@ -59,17 +55,22 @@ export function lookAt(
   const x = [xx / xLen, xy / xLen, xz / xLen];
 
   // Up (y) = z × x
-  const y = [
-    z[1] * x[2] - z[2] * x[1],
-    z[2] * x[0] - z[0] * x[2],
-    z[0] * x[1] - z[1] * x[0],
-  ];
+  const y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]];
 
   // Column-major view matrix with translation
   return new Float32Array([
-    x[0], y[0], z[0], 0,
-    x[1], y[1], z[1], 0,
-    x[2], y[2], z[2], 0,
+    x[0],
+    y[0],
+    z[0],
+    0,
+    x[1],
+    y[1],
+    z[1],
+    0,
+    x[2],
+    y[2],
+    z[2],
+    0,
     -(x[0] * eye[0] + x[1] * eye[1] + x[2] * eye[2]),
     -(y[0] * eye[0] + y[1] * eye[1] + y[2] * eye[2]),
     -(z[0] * eye[0] + z[1] * eye[1] + z[2] * eye[2]),
@@ -84,19 +85,26 @@ export function lookAt(
  * @param near   Near clipping plane
  * @param far    Far clipping plane
  */
-export function perspective(
-  fovY: number,
-  aspect: number,
-  near: number,
-  far: number
-): Float32Array {
+export function perspective(fovY: number, aspect: number, near: number, far: number): Float32Array {
   const f = 1 / Math.tan(fovY / 2);
   const nf = 1 / (near - far);
   return new Float32Array([
-    f / aspect, 0, 0, 0,
-    0, f, 0, 0,
-    0, 0, far * nf, -1,
-    0, 0, far * near * nf, 0,
+    f / aspect,
+    0,
+    0,
+    0,
+    0,
+    f,
+    0,
+    0,
+    0,
+    0,
+    far * nf,
+    -1,
+    0,
+    0,
+    far * near * nf,
+    0,
   ]);
 }
 
@@ -104,18 +112,17 @@ export function perspective(
  * Build a model matrix from translation, rotation (Euler degrees), and scale.
  * Rotation order: X → Y → Z.
  */
-export function mat4FromTRS(
-  position: number[],
-  rotation: number[],
-  scale: number[]
-): Float32Array {
+export function mat4FromTRS(position: number[], rotation: number[], scale: number[]): Float32Array {
   const rx = (rotation[0] * Math.PI) / 180;
   const ry = (rotation[1] * Math.PI) / 180;
   const rz = (rotation[2] * Math.PI) / 180;
 
-  const cx = Math.cos(rx), sx = Math.sin(rx);
-  const cy = Math.cos(ry), sy = Math.sin(ry);
-  const cz = Math.cos(rz), sz = Math.sin(rz);
+  const cx = Math.cos(rx);
+  const sx = Math.sin(rx);
+  const cy = Math.cos(ry);
+  const sy = Math.sin(ry);
+  const cz = Math.cos(rz);
+  const sz = Math.sin(rz);
 
   // Combined rotation matrix elements
   const r00 = cy * cz;
@@ -130,10 +137,21 @@ export function mat4FromTRS(
 
   // Column-major with scale applied to rotation columns
   return new Float32Array([
-    r00 * scale[0], r10 * scale[0], r20 * scale[0], 0,
-    r01 * scale[1], r11 * scale[1], r21 * scale[1], 0,
-    r02 * scale[2], r12 * scale[2], r22 * scale[2], 0,
-    position[0], position[1], position[2], 1,
+    r00 * scale[0],
+    r10 * scale[0],
+    r20 * scale[0],
+    0,
+    r01 * scale[1],
+    r11 * scale[1],
+    r21 * scale[1],
+    0,
+    r02 * scale[2],
+    r12 * scale[2],
+    r22 * scale[2],
+    0,
+    position[0],
+    position[1],
+    position[2],
+    1,
   ]);
 }
-

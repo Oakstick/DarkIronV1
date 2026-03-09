@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ const S = {
     padding: "4px 24px 4px 28px",
     color: disabled ? "#6a6a6a" : "#cccccc",
     background: hovered && !disabled ? "#094771" : "transparent",
-    cursor: disabled ? "default" as const : "pointer" as const,
+    cursor: disabled ? ("default" as const) : ("pointer" as const),
     lineHeight: "22px",
     whiteSpace: "nowrap" as const,
   }),
@@ -130,13 +130,17 @@ export function MenuBar({ menus, right }: MenuBarProps) {
       } else if (e.key === "ArrowDown") {
         setHoveredItem((h) => {
           const next = h + 1;
-          return next >= menu.items.length ? 0 : (menu.items[next] === "separator" ? next + 1 : next);
+          return next >= menu.items.length ? 0 : menu.items[next] === "separator" ? next + 1 : next;
         });
         e.preventDefault();
       } else if (e.key === "ArrowUp") {
         setHoveredItem((h) => {
           const prev = h - 1;
-          return prev < 0 ? menu.items.length - 1 : (menu.items[prev] === "separator" ? prev - 1 : prev);
+          return prev < 0
+            ? menu.items.length - 1
+            : menu.items[prev] === "separator"
+              ? prev - 1
+              : prev;
         });
         e.preventDefault();
       } else if (e.key === "Enter") {
@@ -161,7 +165,10 @@ export function MenuBar({ menus, right }: MenuBarProps) {
       for (const menu of menus) {
         for (const item of menu.items) {
           if (item === "separator" || !item.shortcut || item.disabled) continue;
-          const parts = item.shortcut.toLowerCase().split("+").map(p => p.trim());
+          const parts = item.shortcut
+            .toLowerCase()
+            .split("+")
+            .map((p) => p.trim());
           const needCtrl = parts.includes("ctrl");
           const needShift = parts.includes("shift");
           const key = parts[parts.length - 1];
@@ -182,12 +189,15 @@ export function MenuBar({ menus, right }: MenuBarProps) {
     setHoveredItem(-1);
   }, []);
 
-  const handleTopEnter = useCallback((idx: number) => {
-    if (openIdx !== null) {
-      setOpenIdx(idx);
-      setHoveredItem(-1);
-    }
-  }, [openIdx]);
+  const handleTopEnter = useCallback(
+    (idx: number) => {
+      if (openIdx !== null) {
+        setOpenIdx(idx);
+        setHoveredItem(-1);
+      }
+    },
+    [openIdx],
+  );
 
   return (
     <div ref={barRef} style={S.bar}>
@@ -197,21 +207,34 @@ export function MenuBar({ menus, right }: MenuBarProps) {
           style={S.topItem(openIdx === mIdx, false)}
           onClick={() => handleTopClick(mIdx)}
           onMouseEnter={() => handleTopEnter(mIdx)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleTopClick(mIdx);
+          }}
+          role="menuitem"
+          tabIndex={0}
         >
           {menu.label}
           {openIdx === mIdx && (
             <div style={S.dropdown}>
               {menu.items.map((item, iIdx) => {
                 if (item === "separator") {
-                  return <div key={`sep-${iIdx}`} style={S.separator} />;
+                  return <div key={`${menu.label}-sep-${iIdx}`} style={S.separator} />;
                 }
                 const isHovered = hoveredItem === iIdx;
                 return (
                   <div
-                    key={item.label}
+                    key={`${menu.label}-${item.label}`}
                     style={S.menuItem(!!item.disabled, isHovered)}
                     onMouseEnter={() => setHoveredItem(iIdx)}
                     onMouseLeave={() => setHoveredItem(-1)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !item.disabled && item.action) {
+                        item.action();
+                        setOpenIdx(null);
+                      }
+                    }}
+                    role="menuitem"
+                    tabIndex={-1}
                     onClick={(e) => {
                       e.stopPropagation();
                       if (!item.disabled && item.action) {
@@ -237,4 +260,3 @@ export function MenuBar({ menus, right }: MenuBarProps) {
 }
 
 export type { MenuDefinition, MenuItem, MenuAction };
-
