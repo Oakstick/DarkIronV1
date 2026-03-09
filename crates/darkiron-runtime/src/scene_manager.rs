@@ -10,7 +10,7 @@ use tracing::{error, info, warn};
 
 // Include the generated FlatBuffers code
 #[path = "../../../schemas/generated/rust/scene_generated.rs"]
-#[allow(unused_imports, dead_code, clippy::all)]
+#[allow(warnings, clippy::all)]
 mod schema;
 
 use schema::darkiron::schema as fb;
