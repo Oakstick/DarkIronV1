@@ -31,7 +31,8 @@ function decodeFlatBuffers(data: Uint8Array): unknown | null {
         const mesh = scene.meshes(i);
         if (!mesh) continue;
 
-        // Get typed arrays from FlatBuffers (zero-copy when possible)
+        // Get typed arrays from FlatBuffers and convert to plain arrays
+        // for renderer compatibility (renderer expects number[])
         const verticesArr = mesh.verticesArray();
         const indicesArr = mesh.indicesArray();
 
@@ -44,8 +45,10 @@ function decodeFlatBuffers(data: Uint8Array): unknown | null {
 
       return { meshes };
     }
+    console.debug(`[Transport] FlatBuffers: unhandled payload type ${event.payloadType()}`);
     return null;
-  } catch {
+  } catch (err) {
+    console.debug(`[Transport] FlatBuffers decode error (${data.length} bytes):`, err);
     return null;
   }
 }
