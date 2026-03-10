@@ -8,13 +8,17 @@ export interface RendererConfig {
   canvas: HTMLCanvasElement;
 }
 
-import { lookAt, perspective, mat4Mul, mat4Identity, mat4FromTRS } from "./utils/mat4";
+import { createMat4, lookAt, perspective, mat4Mul, mat4Identity, mat4FromTRS } from "./utils/mat4";
 
 class OrbitalCamera {
   theta = Math.PI * 0.25;
   phi = Math.PI * 0.35;
   radius = 0.8;
   target = [0, 0.03, 0];
+  // Pre-allocated matrices to avoid per-frame allocations
+  private _proj = createMat4();
+  private _view = createMat4();
+  private _vp = createMat4();
   get eye(): [number, number, number] {
     const sp = Math.sin(this.phi);
     const cp = Math.cos(this.phi);
@@ -42,10 +46,9 @@ class OrbitalCamera {
     this.radius = Math.max(0.1, Math.min(20, this.radius * (1 + d * 0.001)));
   }
   viewProj(a: number): Float32Array {
-    return mat4Mul(
-      perspective(Math.PI / 6, a, 0.001, 50),
-      lookAt(this.eye, this.target, [0, 1, 0]),
-    );
+    perspective(this._proj, Math.PI / 6, a, 0.001, 50);
+    lookAt(this._view, this.eye, this.target, [0, 1, 0]);
+    return mat4Mul(this._vp, this._proj, this._view);
   }
 }
 
@@ -248,7 +251,7 @@ export class DarkIronRenderer {
     const pos = t.position || [0, 0, 0];
     const rot = t.rotation || [0, 0, 0];
     const scl = t.scale || [1, 1, 1];
-    const model = mat4FromTRS(pos, rot, scl);
+    const model = mat4FromTRS(createMat4(), pos, rot, scl);
     const ex = this.meshes.findIndex((m) => m.name === mesh.name);
     if (ex >= 0) {
       this.meshes[ex].vBuf.destroy();
@@ -298,7 +301,7 @@ export class DarkIronRenderer {
       },
     });
     this.dev.queue.writeBuffer(this.uBuf, 0, vp);
-    this.dev.queue.writeBuffer(this.uBuf, 64, mat4Identity());
+    this.dev.queue.writeBuffer(this.uBuf, 64, mat4Identity(createMat4()));
     if (this.gridBuf) {
       pass.setPipeline(this.linePipe);
       pass.setBindGroup(0, this.bg);
