@@ -3,6 +3,7 @@
  *
  * NATS WebSocket client with FlatBuffers decoding.
  * All browser <-> runtime messaging MUST go through this package.
+ * Handles ALL SceneEventPayload types defined in scene.fbs.
  */
 
 import * as flatbuffers from "flatbuffers";
@@ -10,52 +11,174 @@ import { type NatsConnection, type Subscription, connect } from "nats.ws";
 import { SceneEvent } from "../../../schemas/generated/ts/darkiron/schema/scene-event";
 import { SceneEventPayload } from "../../../schemas/generated/ts/darkiron/schema/scene-event-payload";
 import { SceneLoaded } from "../../../schemas/generated/ts/darkiron/schema/scene-loaded";
+import { TransformChanged } from "../../../schemas/generated/ts/darkiron/schema/transform-changed";
+import { PrimCreated } from "../../../schemas/generated/ts/darkiron/schema/prim-created";
+import { PrimDeleted } from "../../../schemas/generated/ts/darkiron/schema/prim-deleted";
+import { AssetCooked } from "../../../schemas/generated/ts/darkiron/schema/asset-cooked";
+
+// ─── Typed event interfaces ─────────────────────────────────
+
+export interface SceneLoadedEvent {
+  type: "SceneLoaded";
+  sessionId: string;
+  meshes: Array<{ name: string; vertices: number[]; indices: number[] }>;
+}
+
+export interface TransformChangedEvent {
+  type: "TransformChanged";
+  sessionId: string;
+  primPath: string;
+  matrix: number[] | null;
+}
+
+export interface PrimCreatedEvent {
+  type: "PrimCreated";
+  sessionId: string;
+  primPath: string;
+  primType: string;
+  parentPath: string;
+}
+
+export interface PrimDeletedEvent {
+  type: "PrimDeleted";
+  sessionId: string;
+  primPath: string;
+}
+
+export interface AssetCookedEvent {
+  type: "AssetCooked";
+  sessionId: string;
+  assetName: string;
+  assetHash: string;
+  sizeBytes: number;
+}
+
+export type DarkIronEvent =
+  | SceneLoadedEvent
+  | TransformChangedEvent
+  | PrimCreatedEvent
+  | PrimDeletedEvent
+  | AssetCookedEvent;
+
+// ─── FlatBuffers decoder ────────────────────────────────────
 
 export interface TransportConfig {
   url: string;
 }
 
-export type MessageHandler = (subject: string, payload: unknown) => void;
+export type MessageHandler = (subject: string, payload: DarkIronEvent | unknown) => void;
 
-/** Convert a FlatBuffers SceneLoaded message to a plain JS object */
-function decodeFlatBuffers(data: Uint8Array): unknown | null {
+/** Decode a SceneLoaded payload */
+function decodeSceneLoaded(event: SceneEvent): SceneLoadedEvent {
+  const scene = event.payload(new SceneLoaded()) as SceneLoaded;
+  const meshes: SceneLoadedEvent["meshes"] = [];
+
+  for (let i = 0; i < scene.meshesLength(); i++) {
+    const mesh = scene.meshes(i);
+    if (!mesh) continue;
+    const verticesArr = mesh.verticesArray();
+    const indicesArr = mesh.indicesArray();
+    meshes.push({
+      name: mesh.name() || `mesh_${i}`,
+      vertices: verticesArr ? Array.from(verticesArr) : [],
+      indices: indicesArr ? Array.from(indicesArr) : [],
+    });
+  }
+
+  return {
+    type: "SceneLoaded",
+    sessionId: scene.sessionId() || "",
+    meshes,
+  };
+}
+
+/** Decode a TransformChanged payload */
+function decodeTransformChanged(event: SceneEvent): TransformChangedEvent {
+  const tc = event.payload(new TransformChanged()) as TransformChanged;
+  const transform = tc.transform();
+  let matrix: number[] | null = null;
+  if (transform) {
+    const arr = transform.matrixArray();
+    matrix = arr ? Array.from(arr) : null;
+  }
+  return {
+    type: "TransformChanged",
+    sessionId: tc.sessionId() || "",
+    primPath: tc.primPath() || "",
+    matrix,
+  };
+}
+
+/** Decode a PrimCreated payload */
+function decodePrimCreated(event: SceneEvent): PrimCreatedEvent {
+  const pc = event.payload(new PrimCreated()) as PrimCreated;
+  return {
+    type: "PrimCreated",
+    sessionId: pc.sessionId() || "",
+    primPath: pc.primPath() || "",
+    primType: pc.primType() || "",
+    parentPath: pc.parentPath() || "",
+  };
+}
+
+/** Decode a PrimDeleted payload */
+function decodePrimDeleted(event: SceneEvent): PrimDeletedEvent {
+  const pd = event.payload(new PrimDeleted()) as PrimDeleted;
+  return {
+    type: "PrimDeleted",
+    sessionId: pd.sessionId() || "",
+    primPath: pd.primPath() || "",
+  };
+}
+
+/** Decode an AssetCooked payload */
+function decodeAssetCooked(event: SceneEvent): AssetCookedEvent {
+  const ac = event.payload(new AssetCooked()) as AssetCooked;
+  return {
+    type: "AssetCooked",
+    sessionId: ac.sessionId() || "",
+    assetName: ac.assetName() || "",
+    assetHash: ac.assetHash() || "",
+    sizeBytes: Number(ac.sizeBytes()),
+  };
+}
+
+/** Decode any FlatBuffers SceneEvent into a typed DarkIronEvent */
+function decodeFlatBuffers(data: Uint8Array): DarkIronEvent | null {
   try {
     const buf = new flatbuffers.ByteBuffer(data);
     const event = SceneEvent.getRootAsSceneEvent(buf);
+    const payloadType = event.payloadType();
 
-    if (event.payloadType() === SceneEventPayload.SceneLoaded) {
-      const scene = event.payload(new SceneLoaded()) as SceneLoaded;
-      const meshes: Array<{ name: string; vertices: number[]; indices: number[] }> = [];
-
-      for (let i = 0; i < scene.meshesLength(); i++) {
-        const mesh = scene.meshes(i);
-        if (!mesh) continue;
-
-        // Get typed arrays from FlatBuffers and convert to plain arrays
-        // for renderer compatibility (renderer expects number[])
-        const verticesArr = mesh.verticesArray();
-        const indicesArr = mesh.indicesArray();
-
-        meshes.push({
-          name: mesh.name() || `mesh_${i}`,
-          vertices: verticesArr ? Array.from(verticesArr) : [],
-          indices: indicesArr ? Array.from(indicesArr) : [],
-        });
-      }
-
-      return { meshes };
+    switch (payloadType) {
+      case SceneEventPayload.SceneLoaded:
+        return decodeSceneLoaded(event);
+      case SceneEventPayload.TransformChanged:
+        return decodeTransformChanged(event);
+      case SceneEventPayload.PrimCreated:
+        return decodePrimCreated(event);
+      case SceneEventPayload.PrimDeleted:
+        return decodePrimDeleted(event);
+      case SceneEventPayload.AssetCooked:
+        return decodeAssetCooked(event);
+      case SceneEventPayload.NONE:
+        console.debug("[Transport] FlatBuffers: NONE payload type");
+        return null;
+      default:
+        console.debug(`[Transport] FlatBuffers: unknown payload type ${payloadType}`);
+        return null;
     }
-    console.debug(`[Transport] FlatBuffers: unhandled payload type ${event.payloadType()}`);
-    return null;
   } catch (err) {
     console.debug(`[Transport] FlatBuffers decode error (${data.length} bytes):`, err);
     return null;
   }
 }
 
+// ─── Transport client ───────────────────────────────────────
+
 /**
  * DarkIron browser transport client.
- * Supports both FlatBuffers (binary) and JSON payloads.
+ * Decodes FlatBuffers for all SceneEventPayload types, with JSON fallback.
  */
 export class DarkIronTransport {
   private connection: NatsConnection | null = null;
@@ -84,9 +207,8 @@ export class DarkIronTransport {
         try {
           const raw = msg.data;
           // Try FlatBuffers first, fall back to JSON
-          let payload = decodeFlatBuffers(raw);
+          let payload: DarkIronEvent | unknown = decodeFlatBuffers(raw);
           if (!payload) {
-            // Fallback: try JSON (for Python loader backward compat)
             try {
               const text = new TextDecoder().decode(raw);
               payload = JSON.parse(text);
@@ -119,3 +241,4 @@ export async function createTransport(url = "ws://localhost:9222"): Promise<Dark
   await transport.connect();
   return transport;
 }
+

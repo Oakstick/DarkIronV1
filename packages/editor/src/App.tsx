@@ -1,5 +1,5 @@
 import { DarkIronRenderer, type MeshData } from "@darkiron/renderer";
-import { type DarkIronTransport, createTransport } from "@darkiron/transport";
+import { type DarkIronTransport, type DarkIronEvent, createTransport } from "@darkiron/transport";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MenuBar, type MenuDefinition } from "./components/MenuBar";
 
@@ -174,13 +174,30 @@ export function App() {
         }
         setStatus("connected");
 
-        await transport.subscribe("scene.*.loaded", (_subject, payload) => {
-          const data = payload as { meshes?: MeshData[] };
-          if (data.meshes && rendererRef.current) {
-            for (const mesh of data.meshes) {
-              rendererRef.current.uploadMesh(mesh);
-              setMsgCount(rendererRef.current.meshCount);
-            }
+        await transport.subscribe("scene.>", (_subject, payload) => {
+          const event = payload as DarkIronEvent;
+          if (!event || !event.type) return;
+          switch (event.type) {
+            case "SceneLoaded":
+              if (event.meshes && rendererRef.current) {
+                for (const mesh of event.meshes) {
+                  rendererRef.current.uploadMesh(mesh);
+                  setMsgCount(rendererRef.current.meshCount);
+                }
+              }
+              break;
+            case "TransformChanged":
+              console.log("[Editor] Transform: " + event.primPath);
+              break;
+            case "PrimCreated":
+              console.log("[Editor] Created: " + event.primPath);
+              break;
+            case "PrimDeleted":
+              console.log("[Editor] Deleted: " + event.primPath);
+              break;
+            case "AssetCooked":
+              console.log("[Editor] Cooked: " + event.assetName);
+              break;
           }
         });
 
