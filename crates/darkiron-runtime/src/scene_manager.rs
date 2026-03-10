@@ -119,7 +119,7 @@ pub fn load_usd_file(path: &Path, session_id: &str) -> Result<Vec<Vec<u8>>> {
     let extracted = darkiron_usd::load_stage(path)?;
 
     let mut payloads = Vec::new();
-    for chunk in extracted.chunks(3) {
+    for chunk in extracted.chunks(1) {
         let mesh_data: Vec<(&str, &[f32], &[u32])> = chunk
             .iter()
             .map(|m| (m.name.as_str(), m.vertices.as_slice(), m.indices.as_slice()))
