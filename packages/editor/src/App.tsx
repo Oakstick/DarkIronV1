@@ -26,7 +26,7 @@ export function App() {
   const handleOpenFile = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".json,.usda,.usd,.usdc";
+    input.accept = ".json";
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
@@ -44,6 +44,7 @@ export function App() {
         }
       } catch (err) {
         console.error("[Editor] Failed to load file:", err);
+        alert("Failed to load file. Only JSON scene files supported via File > Open.\nFor USD files, place them in assets/ and restart the runtime.");
       }
     };
     input.click();
@@ -102,7 +103,7 @@ export function App() {
         { label: "Save As...", shortcut: "Ctrl+Shift+S", disabled: true },
         "separator",
         { label: "Export Scene...", action: handleExportScene, disabled: true },
-        { label: "Import USD...", disabled: true },
+        { label: "Import USD...", action: () => alert("To load USD scenes, place .usda/.usdc files in the assets/ directory.\nThe Rust runtime loads them on startup and hot-reloads on changes.") },
         "separator",
         { label: "Preferences...", disabled: true },
       ],
