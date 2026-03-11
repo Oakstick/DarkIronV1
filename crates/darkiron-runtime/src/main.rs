@@ -6,7 +6,7 @@ mod scene_manager;
 use anyhow::Result;
 use darkiron_transport::DarkIronTransport;
 use std::path::PathBuf;
-use tracing::info;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use asset_watcher::AssetWatcher;
@@ -32,17 +32,31 @@ async fn main() -> Result<()> {
     let session_id = Uuid::new_v4().to_string();
     info!(session = %session_id, "Session started");
 
-    // TODO: Replace with proper readiness handshake (editor publishes
-    // "client_ready", runtime waits for it before sending scene data).
-    let startup_delay_ms: u64 = std::env::var("DARKIRON_STARTUP_DELAY_MS")
+    // Wait for an editor to signal readiness before publishing scene data.
+    // The editor subscribes to scene.> first, then publishes darkiron.client.ready.
+    // Timeout fallback ensures headless/test scenarios don't hang indefinitely.
+    let ready_timeout_ms: u64 = std::env::var("DARKIRON_READY_TIMEOUT_MS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(1000);
-    info!(
-        delay_ms = startup_delay_ms,
-        "Waiting for editor connections..."
-    );
-    tokio::time::sleep(std::time::Duration::from_millis(startup_delay_ms)).await;
+        .unwrap_or(30_000);
+    {
+        let mut ready_sub = transport.subscribe("darkiron.client.ready").await?;
+        info!(timeout_ms = ready_timeout_ms, "Waiting for editor client_ready signal...");
+        match tokio::time::timeout(
+            std::time::Duration::from_millis(ready_timeout_ms),
+            ready_sub.next(),
+        )
+        .await
+        {
+            Ok(Some(_msg)) => info!("Editor ready — proceeding with scene publish"),
+            Ok(None) => warn!("client_ready subscription closed unexpectedly"),
+            Err(_) => warn!(
+                timeout_ms = ready_timeout_ms,
+                "No client_ready received — proceeding anyway (headless mode)"
+            ),
+        }
+        // Subscription dropped here — we only needed the first signal.
+    }
 
     // Ensure assets directory exists
     let assets_dir =
@@ -64,17 +78,30 @@ async fn main() -> Result<()> {
     // Start file watcher for hot reload
     let mut watcher = AssetWatcher::start(&assets_dir)?;
 
-    // Subscribe to editor commands
+    // Subscribe to editor commands and late-joining editors
     let edit_subject = format!("scene.{session_id}.edit.>");
-    let mut subscriber = transport.subscribe(&edit_subject).await?;
+    let mut edit_sub = transport.subscribe(&edit_subject).await?;
+    let mut ready_sub = transport.subscribe("darkiron.client.ready").await?;
     info!(subject = %edit_subject, "Listening for editor commands");
     info!("=== Runtime ready ===");
 
     // Main event loop
     loop {
         tokio::select! {
-            Some(msg) = subscriber.next() => {
+            Some(msg) = edit_sub.next() => {
                 info!(subject = %msg.subject, bytes = msg.payload.len(), "Editor command");
+            }
+            Some(_msg) = ready_sub.next() => {
+                // A new editor just connected — re-publish the full scene.
+                info!("Late-joining editor detected — re-publishing scene...");
+                let subject = format!("scene.{session_id}.loaded");
+                let reloaded = load_and_publish_assets(&transport, &assets_dir, &session_id).await;
+                if !reloaded {
+                    let cube = build_cube_scene(&session_id);
+                    if let Err(e) = publish_scene(&transport, &subject, &cube).await {
+                        warn!(error = %e, "Failed to re-publish default cube");
+                    }
+                }
             }
             Some(changed_path) = watcher.rx.recv() => {
                 info!(file = %changed_path.display(), "Asset changed — hot reloading...");
@@ -92,3 +119,4 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
+

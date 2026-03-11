@@ -201,6 +201,14 @@ export function App() {
           }
         });
 
+        // Signal readiness to the runtime — subscriptions are active,
+        // so any scene data published after this will be received.
+        await transport.publish(
+          "darkiron.client.ready",
+          new TextEncoder().encode(JSON.stringify({ editor: true, ts: Date.now() })),
+        );
+        console.log("[Editor] Published client_ready signal");
+
         function frame() {
           if (destroyed) return;
           rendererRef.current?.render();
