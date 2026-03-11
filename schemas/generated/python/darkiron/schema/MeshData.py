@@ -86,8 +86,35 @@ class MeshData(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
         return o == 0
 
+    # MeshData
+    def Uvs(self, j):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
+        if o != 0:
+            a = self._tab.Vector(o)
+            return self._tab.Get(flatbuffers.number_types.Float32Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4))
+        return 0
+
+    # MeshData
+    def UvsAsNumpy(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
+        if o != 0:
+            return self._tab.GetVectorAsNumpy(flatbuffers.number_types.Float32Flags, o)
+        return 0
+
+    # MeshData
+    def UvsLength(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
+        if o != 0:
+            return self._tab.VectorLen(o)
+        return 0
+
+    # MeshData
+    def UvsIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
+        return o == 0
+
 def MeshDataStart(builder):
-    builder.StartObject(3)
+    builder.StartObject(4)
 
 def Start(builder):
     MeshDataStart(builder)
@@ -121,6 +148,18 @@ def MeshDataStartIndicesVector(builder, numElems):
 
 def StartIndicesVector(builder, numElems):
     return MeshDataStartIndicesVector(builder, numElems)
+
+def MeshDataAddUvs(builder, uvs):
+    builder.PrependUOffsetTRelativeSlot(3, flatbuffers.number_types.UOffsetTFlags.py_type(uvs), 0)
+
+def AddUvs(builder, uvs):
+    MeshDataAddUvs(builder, uvs)
+
+def MeshDataStartUvsVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+def StartUvsVector(builder, numElems):
+    return MeshDataStartUvsVector(builder, numElems)
 
 def MeshDataEnd(builder):
     return builder.EndObject()

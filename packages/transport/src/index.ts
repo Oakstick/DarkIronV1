@@ -21,7 +21,7 @@ import { AssetCooked } from "../../../schemas/generated/ts/darkiron/schema/asset
 export interface SceneLoadedEvent {
   type: "SceneLoaded";
   sessionId: string;
-  meshes: Array<{ name: string; vertices: number[]; indices: number[] }>;
+  meshes: Array<{ name: string; vertices: number[]; indices: number[]; uvs: number[] }>;
 }
 
 export interface TransformChangedEvent {
