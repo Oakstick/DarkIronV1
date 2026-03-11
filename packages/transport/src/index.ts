@@ -18,10 +18,24 @@ import { AssetCooked } from "../../../schemas/generated/ts/darkiron/schema/asset
 
 // ─── Typed event interfaces ─────────────────────────────────
 
+export interface MaterialInfo {
+  name?: string;
+  base_color_tex?: string;
+  normal_tex?: string;
+  roughness_tex?: string;
+  metallic_tex?: string;
+}
+
 export interface SceneLoadedEvent {
   type: "SceneLoaded";
   sessionId: string;
-  meshes: Array<{ name: string; vertices: number[]; indices: number[]; uvs: number[] }>;
+  meshes: Array<{
+    name: string;
+    vertices: number[];
+    indices: number[];
+    uvs?: number[];
+    material?: MaterialInfo;
+  }>;
 }
 
 export interface TransformChangedEvent {
@@ -68,7 +82,7 @@ export interface TransportConfig {
 
 export type MessageHandler = (subject: string, payload: DarkIronEvent | unknown) => void;
 
-/** Decode a SceneLoaded payload */
+/** Decode a SceneLoaded payload — extracts geometry, UVs, and PBR material paths. */
 function decodeSceneLoaded(event: SceneEvent): SceneLoadedEvent {
   const scene = event.payload(new SceneLoaded()) as SceneLoaded;
   const meshes: SceneLoadedEvent["meshes"] = [];
@@ -76,12 +90,30 @@ function decodeSceneLoaded(event: SceneEvent): SceneLoadedEvent {
   for (let i = 0; i < scene.meshesLength(); i++) {
     const mesh = scene.meshes(i);
     if (!mesh) continue;
+
     const verticesArr = mesh.verticesArray();
     const indicesArr = mesh.indicesArray();
+    const uvsArr = mesh.uvsArray();
+
+    // Decode material if present
+    const fbMat = mesh.material();
+    let material: MaterialInfo | undefined;
+    if (fbMat) {
+      material = {
+        name: fbMat.name() ?? undefined,
+        base_color_tex: fbMat.baseColorTex() ?? undefined,
+        normal_tex: fbMat.normalTex() ?? undefined,
+        roughness_tex: fbMat.roughnessTex() ?? undefined,
+        metallic_tex: fbMat.metallicTex() ?? undefined,
+      };
+    }
+
     meshes.push({
       name: mesh.name() || `mesh_${i}`,
       vertices: verticesArr ? Array.from(verticesArr) : [],
       indices: indicesArr ? Array.from(indicesArr) : [],
+      uvs: uvsArr ? Array.from(uvsArr) : undefined,
+      material,
     });
   }
 
