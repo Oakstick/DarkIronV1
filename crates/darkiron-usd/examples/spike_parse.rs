@@ -1,11 +1,11 @@
 //! Test: load USDC and extract all meshes
-use darkiron_usd::load_usdc;
+use darkiron_usd::load_stage;
 use std::path::Path;
 
 fn main() {
     tracing_subscriber::fmt().init();
     let path = Path::new(r"D:\DarkIron\darkiron\assets\OpenChessSet\chess_set_flat.usdc");
-    match load_usdc(path) {
+    match load_stage(path) {
         Ok(meshes) => {
             println!("\nExtracted {} meshes:", meshes.len());
             for m in &meshes {

@@ -20,10 +20,9 @@ use tracing::{debug, info, warn};
 
 pub struct ExtractedMesh {
     pub name: String,
-
     pub vertices: Vec<f32>,
-
     pub indices: Vec<u32>,
+    pub uvs: Vec<f32>,
 }
 
 fn color_for_path(path: &str) -> [f32; 3] {
@@ -318,6 +317,9 @@ fn extract_mesh_with_transform(
 
     let normals = get_property(reader, path, "normals").and_then(|v| get_f32_array(&v));
 
+    // Texture coordinates (faceVarying: one UV per face-vertex)
+    let uvs_raw = get_property(reader, path, "primvars:st").and_then(|v| get_f32_array(&v));
+
     let base_world = compute_world_matrix(reader, path);
 
     let world = match extra_transform {
@@ -335,7 +337,7 @@ fn extract_mesh_with_transform(
     };
 
     let mut vertices: Vec<f32> = Vec::new();
-
+    let mut uvs: Vec<f32> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
 
     let mut fvi_off: usize = 0;
@@ -393,6 +395,13 @@ fn extract_mesh_with_transform(
                 (0.0, 1.0, 0.0)
             };
 
+            // Extract UV (faceVarying: indexed by fvi_off + j)
+            let (u, v) = if let Some(ref st) = uvs_raw {
+                let ui = (fvi_off + j) * 2;
+                if ui + 1 < st.len() { (st[ui], st[ui + 1]) } else { (0.0, 0.0) }
+            } else { (0.0, 0.0) };
+            uvs.extend_from_slice(&[u, v]);
+
             vertices.extend_from_slice(&[px, py, pz, nx, ny, nz, color[0], color[1], color[2]]);
         }
 
@@ -417,6 +426,7 @@ fn extract_mesh_with_transform(
         name,
         vertices,
         indices,
+        uvs,
     })
 }
 

@@ -62,8 +62,23 @@ indicesArray():Uint32Array|null {
   return offset ? new Uint32Array(this.bb!.bytes().buffer, this.bb!.bytes().byteOffset + this.bb!.__vector(this.bb_pos + offset), this.bb!.__vector_len(this.bb_pos + offset)) : null;
 }
 
+uvs(index: number):number|null {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
+  return offset ? this.bb!.readFloat32(this.bb!.__vector(this.bb_pos + offset) + index * 4) : 0;
+}
+
+uvsLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
+}
+
+uvsArray():Float32Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
+  return offset ? new Float32Array(this.bb!.bytes().buffer, this.bb!.bytes().byteOffset + this.bb!.__vector(this.bb_pos + offset), this.bb!.__vector_len(this.bb_pos + offset)) : null;
+}
+
 static startMeshData(builder:flatbuffers.Builder) {
-  builder.startObject(3);
+  builder.startObject(4);
 }
 
 static addName(builder:flatbuffers.Builder, nameOffset:flatbuffers.Offset) {
@@ -112,16 +127,38 @@ static startIndicesVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(4, numElems, 4);
 }
 
+static addUvs(builder:flatbuffers.Builder, uvsOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(3, uvsOffset, 0);
+}
+
+static createUvsVector(builder:flatbuffers.Builder, data:number[]|Float32Array):flatbuffers.Offset;
+/**
+ * @deprecated This Uint8Array overload will be removed in the future.
+ */
+static createUvsVector(builder:flatbuffers.Builder, data:number[]|Uint8Array):flatbuffers.Offset;
+static createUvsVector(builder:flatbuffers.Builder, data:number[]|Float32Array|Uint8Array):flatbuffers.Offset {
+  builder.startVector(4, data.length, 4);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addFloat32(data[i]!);
+  }
+  return builder.endVector();
+}
+
+static startUvsVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(4, numElems, 4);
+}
+
 static endMeshData(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createMeshData(builder:flatbuffers.Builder, nameOffset:flatbuffers.Offset, verticesOffset:flatbuffers.Offset, indicesOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createMeshData(builder:flatbuffers.Builder, nameOffset:flatbuffers.Offset, verticesOffset:flatbuffers.Offset, indicesOffset:flatbuffers.Offset, uvsOffset:flatbuffers.Offset):flatbuffers.Offset {
   MeshData.startMeshData(builder);
   MeshData.addName(builder, nameOffset);
   MeshData.addVertices(builder, verticesOffset);
   MeshData.addIndices(builder, indicesOffset);
+  MeshData.addUvs(builder, uvsOffset);
   return MeshData.endMeshData(builder);
 }
 }
