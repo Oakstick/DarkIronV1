@@ -6,7 +6,7 @@
 use anyhow::Result;
 use darkiron_transport::DarkIronTransport;
 use std::path::Path;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 // Include the generated FlatBuffers code
 #[path = "../../../schemas/generated/rust/scene_generated.rs"]
@@ -66,19 +66,31 @@ pub fn build_cube_scene(session_id: &str) -> Vec<u8> {
         indices.extend_from_slice(&[vi, vi + 1, vi + 2, vi, vi + 2, vi + 3]);
         vi += 4;
     }
-    meshes_to_flatbuffers(session_id, &[("default_cube", &vertices, &indices, &[])])
+    meshes_to_flatbuffers(session_id, &[("default_cube", &vertices, &indices, &[], None)])
 }
 
 /// Convert a list of meshes to FlatBuffers SceneEvent bytes.
-fn meshes_to_flatbuffers(session_id: &str, meshes: &[(&str, &[f32], &[u32], &[f32])]) -> Vec<u8> {
+fn meshes_to_flatbuffers(session_id: &str, meshes: &[(&str, &[f32], &[u32], &[f32], Option<&darkiron_usd::MaterialInfo>)]) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024 * 1024);
     let mut mesh_offsets = Vec::new();
 
-    for &(name_str, verts, idxs, uvs) in meshes {
+    for &(name_str, verts, idxs, uvs, mat_info) in meshes {
         let name = builder.create_string(name_str);
         let verts_vec = builder.create_vector(verts);
         let idx_vec = builder.create_vector(idxs);
         let uvs_vec = if uvs.is_empty() { None } else { Some(builder.create_vector(uvs)) };
+        // Build material data if available
+        let material_offset = mat_info.map(|mi| {
+            let mn = builder.create_string(&mi.name);
+            let bc = mi.base_color_tex.as_deref().map(|s| builder.create_string(s));
+            let nt = mi.normal_tex.as_deref().map(|s| builder.create_string(s));
+            let rt = mi.roughness_tex.as_deref().map(|s| builder.create_string(s));
+            let mt = mi.metallic_tex.as_deref().map(|s| builder.create_string(s));
+            fb::MaterialData::create(&mut builder, &fb::MaterialDataArgs {
+                name: Some(mn), base_color_tex: bc, normal_tex: nt,
+                roughness_tex: rt, metallic_tex: mt,
+            })
+        });
         let mesh = fb::MeshData::create(
             &mut builder,
             &fb::MeshDataArgs {
@@ -86,6 +98,7 @@ fn meshes_to_flatbuffers(session_id: &str, meshes: &[(&str, &[f32], &[u32], &[f3
                 vertices: Some(verts_vec),
                 indices: Some(idx_vec),
                 uvs: uvs_vec,
+                material: material_offset,
             },
         );
         mesh_offsets.push(mesh);
@@ -122,9 +135,9 @@ pub fn load_usd_file(path: &Path, session_id: &str) -> Result<Vec<Vec<u8>>> {
 
     let mut payloads = Vec::new();
     for chunk in extracted.chunks(1) {
-        let mesh_data: Vec<(&str, &[f32], &[u32], &[f32])> = chunk
+        let mesh_data: Vec<(&str, &[f32], &[u32], &[f32], Option<&darkiron_usd::MaterialInfo>)> = chunk
             .iter()
-            .map(|m| (m.name.as_str(), m.vertices.as_slice(), m.indices.as_slice(), m.uvs.as_slice()))
+            .map(|m| (m.name.as_str(), m.vertices.as_slice(), m.indices.as_slice(), m.uvs.as_slice(), m.material.as_ref()))
             .collect();
         payloads.push(meshes_to_flatbuffers(session_id, &mesh_data));
     }
@@ -177,6 +190,7 @@ pub fn load_scene_file(path: &Path, session_id: &str) -> Result<Vec<u8>> {
                 vertices: Some(verts_vec),
                 indices: Some(idx_vec),
                 uvs: None,
+                material: None,
             },
         );
         mesh_offsets.push(mesh);
@@ -215,32 +229,88 @@ pub async fn publish_scene(
     Ok(())
 }
 
+/// Check if a file extension is a supported scene format (USD + JSON).
+fn is_scene_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| matches!(ext, "usdc" | "usda" | "usd" | "json"))
+}
+
 /// Check if a file extension is a supported USD format.
 fn is_usd_file(path: &Path) -> bool {
     path.extension()
-        .map(|e| matches!(e.to_str(), Some("usdc" | "usda" | "usd")))
-        .unwrap_or(false)
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| matches!(ext, "usdc" | "usda" | "usd"))
 }
 
-/// Scan assets directory for scene files (JSON + USD), publish via NATS.
+/// Recursively collect all scene files (USD + JSON) under a directory.
+///
+/// Uses an iterative stack to avoid deep recursion. Caps traversal at
+/// `max_depth` levels to guard against symlink loops or adversarial trees.
+/// O(n) in total filesystem entries; allocates one Vec for the result.
+fn collect_scene_files(root: &Path, max_depth: usize) -> Vec<std::path::PathBuf> {
+    let mut result = Vec::new();
+    let mut stack: Vec<(std::path::PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
+
+    while let Some((dir, depth)) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(e) => {
+                warn!(path = %dir.display(), error = %e, "Cannot read directory");
+                continue;
+            }
+        };
+
+        for entry in entries.flatten() {
+            // Skip symlinks to avoid cycles and unexpected traversal outside assets_dir.
+            let is_symlink = entry
+                .file_type()
+                .map(|ft| ft.is_symlink())
+                .unwrap_or(false);
+            if is_symlink {
+                debug!(path = %entry.path().display(), "Skipping symlink");
+                continue;
+            }
+
+            let path = entry.path();
+            if path.is_dir() {
+                if depth < max_depth {
+                    stack.push((path, depth + 1));
+                }
+            } else if is_scene_file(&path) {
+                result.push(path);
+            }
+        }
+    }
+
+    // Sort for deterministic load order (alphabetical by full path).
+    result.sort();
+    result
+}
+
+/// Scan assets directory tree for scene files (JSON + USD), publish via NATS.
+///
+/// Recurses up to 4 levels deep so nested asset packs like
+/// `assets/OpenChessSet/chess_set.usda` are discovered automatically.
 pub async fn load_and_publish_assets(
     transport: &DarkIronTransport,
     assets_dir: &Path,
     session_id: &str,
 ) -> bool {
+    let files = collect_scene_files(assets_dir, 4);
+    if files.is_empty() {
+        info!(dir = %assets_dir.display(), "No scene files found");
+        return false;
+    }
+
+    info!(dir = %assets_dir.display(), count = files.len(), "Discovered scene files");
+
     let mut any_loaded = false;
+    let subject = format!("scene.{session_id}.loaded");
 
-    let entries = match std::fs::read_dir(assets_dir) {
-        Ok(e) => e,
-        Err(_) => return false,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let subject = format!("scene.{session_id}.loaded");
-
-        if is_usd_file(&path) {
-            match load_usd_file(&path, session_id) {
+    for path in &files {
+        if is_usd_file(path) {
+            match load_usd_file(path, session_id) {
                 Ok(payloads) => {
                     for payload in &payloads {
                         if let Err(e) = publish_scene(transport, &subject, payload).await {
@@ -253,7 +323,7 @@ pub async fn load_and_publish_assets(
                 Err(e) => warn!(file = %path.display(), error = %e, "Failed to load USD"),
             }
         } else if path.extension().is_some_and(|e| e == "json") {
-            match load_scene_file(&path, session_id) {
+            match load_scene_file(path, session_id) {
                 Ok(payload) => match publish_scene(transport, &subject, &payload).await {
                     Ok(()) => {
                         info!(file = %path.display(), bytes = payload.len(), "Published JSON scene");
