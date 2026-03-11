@@ -31,9 +31,9 @@ export interface SceneLoadedEvent {
   sessionId: string;
   meshes: Array<{
     name: string;
-    vertices: number[];
-    indices: number[];
-    uvs?: number[];
+    vertices: Float32Array | number[];
+    indices: Uint32Array | number[];
+    uvs?: Float32Array | number[];
     material?: MaterialInfo;
   }>;
 }
@@ -108,11 +108,15 @@ function decodeSceneLoaded(event: SceneEvent): SceneLoadedEvent {
       };
     }
 
+    // Copy typed arrays to owned buffers (FlatBuffers views share the
+    // underlying ByteBuffer which may be GC'd after this handler returns).
+    // Typed-array-to-typed-array copy is ~10x faster than Array.from()
+    // and avoids boxing millions of floats into heap-allocated Numbers.
     meshes.push({
       name: mesh.name() || `mesh_${i}`,
-      vertices: verticesArr ? Array.from(verticesArr) : [],
-      indices: indicesArr ? Array.from(indicesArr) : [],
-      uvs: uvsArr ? Array.from(uvsArr) : undefined,
+      vertices: verticesArr ? new Float32Array(verticesArr) : new Float32Array(0),
+      indices: indicesArr ? new Uint32Array(indicesArr) : new Uint32Array(0),
+      uvs: uvsArr ? new Float32Array(uvsArr) : undefined,
       material,
     });
   }
