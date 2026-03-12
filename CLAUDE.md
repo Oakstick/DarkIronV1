@@ -118,3 +118,57 @@ task fmt            # Format everything (rustfmt + biome)
 3. If touching the renderer: test in Chrome AND Edge. Note any browser-specific workarounds.
 4. If adding a new crate or package: update the workspace config (Cargo.toml or pnpm-workspace.yaml).
 5. Write an ADR in `docs/architecture/` for any non-trivial design decision.
+
+
+## Current State (updated March 11, 2026)
+
+### Branch: `feature/pbr-step2-materials`
+
+### Recent Commits (this session)
+- `6f8b3fe` — perf: pass typed arrays through transport/renderer pipeline (~350MB alloc savings)
+- `1f8dceb` — feat: decode UVs and MaterialData in transport FlatBuffers decoder
+- `00c03b9` — feat: replace startup sleep with client_ready handshake
+- `fac287d` — fix: recursive asset directory scanning with symlink safety
+
+### What Works
+- Full chess set renders: 49 meshes, ~1.1M triangles, vertex color shading
+- PointInstancer resolved: all 8 pawns per side
+- FlatBuffers end-to-end (Rust → NATS → Browser), typed arrays (no boxing)
+- Client readiness handshake (editor publishes `darkiron.client.ready`, runtime waits)
+- Recursive asset discovery (`collect_scene_files`, max_depth=4, skips symlinks)
+- Hot reload on file changes (asset_watcher with debounce)
+- Dev tooling: `scripts/dev-start.bat`, `scripts/kill.bat`
+- 112 PBR textures served from `packages/editor/public/textures/OpenChessSet/`
+
+### What's Next (PBR Materials — plumbing is done)
+1. Commit remaining dirty files (generated schemas, darkiron-usd material changes, shaders)
+2. Test PBR base_color textures end-to-end (all wiring connected, needs restart test)
+3. Normal map support (add to shader bind group, needs tangent generation)
+4. Roughness + metallic (extend shader to Cook-Torrance BRDF)
+5. Camera auto-framing on scene load
+
+### Uncommitted Dirty Files
+- `crates/darkiron-usd/src/lib.rs` — material extraction from USD bindings
+- `schemas/flatbuffers/scene.fbs` — MaterialData table added
+- `schemas/generated/` — regenerated TS/Rust/Python bindings
+- `shaders/mesh_pbr.wgsl` — experimental PBR shader
+- `docs/gemini-*.md` — Gemini code review docs
+- `dev-setup.ps1` — PowerShell health check script
+- `packages/editor/public/textures/` — 112 PBR texture files (untracked)
+
+### Dev Environment (Windows)
+- Machine: DESKTOP-1OLJ79H, D:\DarkIron\darkiron
+- Docker Desktop for NATS (nats:2.10-alpine on ports 4222/9222/8222)
+- `GEMINI_API_KEY` in process env for code reviews
+- Python 3.12 + usd-core 26.3 + nats-py 2.14 for `tools/load-chess-usd.py`
+
+### Pre-existing TS Errors (not blockers, ignore)
+- `packages/renderer/src/utils/mat4.ts` — strict null checks on array indexing
+- `packages/renderer/src/index.ts:473-474` — Object possibly undefined
+
+### Workflow Convention
+- Fix one thing at a time
+- Send diff to Gemini (via API + GEMINI_API_KEY) for code review
+- Wait for user "merge" command before committing
+- Conventional commits with "Reviewed-by: Gemini 2.5 Flash (APPROVED)"
+
