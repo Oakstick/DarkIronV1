@@ -33,9 +33,9 @@ export function mat4Mul(out: Float32Array, a: Float32Array, b: Float32Array): Fl
 export function lookAt(out: Float32Array, eye: number[], target: number[], up: number[]): Float32Array {
   return m4.lookAt(
     out,
-    vec3.fromValues(eye[0], eye[1], eye[2]),
-    vec3.fromValues(target[0], target[1], target[2]),
-    vec3.fromValues(up[0], up[1], up[2]),
+    vec3.fromValues(eye[0] ?? 0, eye[1] ?? 0, eye[2] ?? 0),
+    vec3.fromValues(target[0] ?? 0, target[1] ?? 0, target[2] ?? 0),
+    vec3.fromValues(up[0] ?? 0, up[1] ?? 0, up[2] ?? 0),
   ) as Float32Array;
 }
 
@@ -52,11 +52,11 @@ export function perspective(out: Float32Array, fovY: number, aspect: number, nea
  */
 export function mat4FromTRS(out: Float32Array, position: number[], rotation: number[], scale: number[]): Float32Array {
   m4.identity(out);
-  m4.translate(out, out, vec3.fromValues(position[0], position[1], position[2]));
-  m4.rotateX(out, out, (rotation[0] * Math.PI) / 180);
-  m4.rotateY(out, out, (rotation[1] * Math.PI) / 180);
-  m4.rotateZ(out, out, (rotation[2] * Math.PI) / 180);
-  m4.scale(out, out, vec3.fromValues(scale[0], scale[1], scale[2]));
+  m4.translate(out, out, vec3.fromValues(position[0] ?? 0, position[1] ?? 0, position[2] ?? 0));
+  m4.rotateX(out, out, ((rotation[0] ?? 0) * Math.PI) / 180);
+  m4.rotateY(out, out, ((rotation[1] ?? 0) * Math.PI) / 180);
+  m4.rotateZ(out, out, ((rotation[2] ?? 0) * Math.PI) / 180);
+  m4.scale(out, out, vec3.fromValues(scale[0] ?? 0, scale[1] ?? 0, scale[2] ?? 0));
   return out;
 }
 

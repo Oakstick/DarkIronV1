@@ -16,7 +16,7 @@ class OrbitalCamera {
   theta = Math.PI * 0.25;
   phi = Math.PI * 0.35;
   radius = 0.8;
-  target = [0, 0.03, 0];
+  target: [number, number, number] = [0, 0.03, 0];
   // Pre-allocated matrices to avoid per-frame allocations
   private _proj = createMat4();
   private _view = createMat4();
@@ -108,6 +108,13 @@ interface GPUMesh {
   texBg: GPUBindGroup; // per-mesh texture bind group (group 1)
   tex?: GPUTexture; // owned texture (destroyed on cleanup)
 }
+
+/** Cast typed array to satisfy TS 5.7+ GPUAllowSharedBufferSource constraint.
+ *  @webgpu/types defines writeBuffer(data: GPUAllowSharedBufferSource) which
+ *  requires ArrayBufferView<ArrayBuffer>, but TS 5.7+ typed arrays use
+ *  ArrayBufferView<ArrayBufferLike>. This is a safe narrowing cast. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const gpuData = (data: Float32Array | Uint32Array | Uint16Array): any => data;
 
 /** Interleave pos(3)+normal(3)+color(3) vertices with uv(2) into 11-float stride */
 function interleaveWithUVs(vertices: number[], uvs: number[]): Float32Array {
@@ -270,14 +277,14 @@ export class DarkIronRenderer {
       size: grid.v.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    this.dev.queue.writeBuffer(this.gridBuf, 0, grid.v);
+    this.dev.queue.writeBuffer(this.gridBuf, 0, gpuData(grid.v));
     this.gridN = grid.n;
     const axis = genAxis(0.2);
     this.axisBuf = this.dev.createBuffer({
       size: axis.v.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    this.dev.queue.writeBuffer(this.axisBuf, 0, axis.v);
+    this.dev.queue.writeBuffer(this.axisBuf, 0, gpuData(axis.v));
     this.axisN = axis.n;
     this.depthTex = this.dev.createTexture({
       size: [this.config.canvas.width, this.config.canvas.height],
@@ -329,7 +336,7 @@ export class DarkIronRenderer {
   private async createTextureFromBytes(bytes: Uint8Array): Promise<GPUTexture | null> {
     if (!this.dev) return null;
     try {
-      const blob = new Blob([bytes]);
+      const blob = new Blob([new Uint8Array(bytes)]);
       const bitmap = await createImageBitmap(blob);
       const tex = this.dev.createTexture({
         size: [bitmap.width, bitmap.height],
@@ -364,12 +371,12 @@ export class DarkIronRenderer {
       size: v.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    this.dev.queue.writeBuffer(vBuf, 0, v);
+    this.dev.queue.writeBuffer(vBuf, 0, gpuData(v));
     const iBuf = this.dev.createBuffer({
       size: idx.byteLength,
       usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
     });
-    this.dev.queue.writeBuffer(iBuf, 0, idx);
+    this.dev.queue.writeBuffer(iBuf, 0, gpuData(idx));
 
     const t = mesh.transform || {};
     const pos = t.position || [0, 0, 0];
@@ -448,8 +455,8 @@ export class DarkIronRenderer {
         depthStoreOp: "store",
       },
     });
-    this.dev.queue.writeBuffer(this.uBuf, 0, vp);
-    this.dev.queue.writeBuffer(this.uBuf, 64, mat4Identity(createMat4()));
+    this.dev.queue.writeBuffer(this.uBuf, 0, gpuData(vp));
+    this.dev.queue.writeBuffer(this.uBuf, 64, gpuData(mat4Identity(createMat4())));
     if (this.gridBuf) {
       pass.setPipeline(this.linePipe);
       pass.setBindGroup(0, this.uniformBg);
@@ -463,7 +470,7 @@ export class DarkIronRenderer {
       pass.draw(this.axisN);
     }
     for (const m of this.meshes) {
-      this.dev.queue.writeBuffer(this.uBuf, 64, m.model);
+      this.dev.queue.writeBuffer(this.uBuf, 64, gpuData(m.model));
       pass.setPipeline(this.meshPipe);
       pass.setBindGroup(0, this.uniformBg);
       pass.setBindGroup(1, m.texBg);
