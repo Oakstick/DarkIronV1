@@ -37,7 +37,7 @@ export function App() {
         if (data.meshes && rendererRef.current) {
           rendererRef.current.clearMeshes();
           for (const mesh of data.meshes) {
-            rendererRef.current.uploadMesh(mesh);
+            await rendererRef.current.uploadMesh(mesh);
           }
           setMsgCount(rendererRef.current.meshCount);
           console.log(`[Editor] Loaded ${data.meshes.length} meshes from ${file.name}`);
@@ -181,8 +181,15 @@ export function App() {
             case "SceneLoaded":
               if (event.meshes && rendererRef.current) {
                 for (const mesh of event.meshes) {
-                  rendererRef.current.uploadMesh(mesh);
-                  setMsgCount(rendererRef.current.meshCount);
+                  rendererRef.current.uploadMesh({
+                    name: mesh.name,
+                    vertices: mesh.vertices,
+                    indices: mesh.indices,
+                    uvs: mesh.uvs,
+                    baseColorTex: mesh.baseColorTex,
+                  }).then(() => {
+                    setMsgCount(rendererRef.current?.meshCount ?? 0);
+                  });
                 }
               }
               break;

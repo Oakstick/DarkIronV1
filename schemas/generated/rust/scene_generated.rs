@@ -595,6 +595,7 @@ impl<'a> MeshData<'a> {
   pub const VT_VERTICES: flatbuffers::VOffsetT = 6;
   pub const VT_INDICES: flatbuffers::VOffsetT = 8;
   pub const VT_UVS: flatbuffers::VOffsetT = 10;
+  pub const VT_BASE_COLOR_TEX: flatbuffers::VOffsetT = 12;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -606,6 +607,7 @@ impl<'a> MeshData<'a> {
     args: &'args MeshDataArgs<'args>
   ) -> flatbuffers::WIPOffset<MeshData<'bldr>> {
     let mut builder = MeshDataBuilder::new(_fbb);
+    if let Some(x) = args.base_color_tex { builder.add_base_color_tex(x); }
     if let Some(x) = args.uvs { builder.add_uvs(x); }
     if let Some(x) = args.indices { builder.add_indices(x); }
     if let Some(x) = args.vertices { builder.add_vertices(x); }
@@ -642,6 +644,13 @@ impl<'a> MeshData<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, f32>>>(MeshData::VT_UVS, None)}
   }
+  #[inline]
+  pub fn base_color_tex(&self) -> Option<flatbuffers::Vector<'a, u8>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u8>>>(MeshData::VT_BASE_COLOR_TEX, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for MeshData<'_> {
@@ -655,6 +664,7 @@ impl flatbuffers::Verifiable for MeshData<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, f32>>>("vertices", Self::VT_VERTICES, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u32>>>("indices", Self::VT_INDICES, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, f32>>>("uvs", Self::VT_UVS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u8>>>("base_color_tex", Self::VT_BASE_COLOR_TEX, false)?
      .finish();
     Ok(())
   }
@@ -664,6 +674,7 @@ pub struct MeshDataArgs<'a> {
     pub vertices: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, f32>>>,
     pub indices: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u32>>>,
     pub uvs: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, f32>>>,
+    pub base_color_tex: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
 }
 impl<'a> Default for MeshDataArgs<'a> {
   #[inline]
@@ -673,6 +684,7 @@ impl<'a> Default for MeshDataArgs<'a> {
       vertices: None,
       indices: None,
       uvs: None,
+      base_color_tex: None,
     }
   }
 }
@@ -699,6 +711,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> MeshDataBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(MeshData::VT_UVS, uvs);
   }
   #[inline]
+  pub fn add_base_color_tex(&mut self, base_color_tex: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u8>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(MeshData::VT_BASE_COLOR_TEX, base_color_tex);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> MeshDataBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     MeshDataBuilder {
@@ -720,6 +736,7 @@ impl core::fmt::Debug for MeshData<'_> {
       ds.field("vertices", &self.vertices());
       ds.field("indices", &self.indices());
       ds.field("uvs", &self.uvs());
+      ds.field("base_color_tex", &self.base_color_tex());
       ds.finish()
   }
 }

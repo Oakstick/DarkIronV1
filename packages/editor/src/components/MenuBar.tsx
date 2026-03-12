@@ -114,6 +114,7 @@ export function MenuBar({ menus, right }: MenuBarProps) {
     function handleKey(e: KeyboardEvent) {
       if (openIdx === null) return;
       const menu = menus[openIdx];
+      if (!menu) return;
       const actionItems = menu.items.filter((i): i is MenuAction => i !== "separator");
 
       if (e.key === "Escape") {

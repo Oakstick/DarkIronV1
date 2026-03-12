@@ -77,8 +77,23 @@ uvsArray():Float32Array|null {
   return offset ? new Float32Array(this.bb!.bytes().buffer, this.bb!.bytes().byteOffset + this.bb!.__vector(this.bb_pos + offset), this.bb!.__vector_len(this.bb_pos + offset)) : null;
 }
 
+baseColorTex(index: number):number|null {
+  const offset = this.bb!.__offset(this.bb_pos, 12);
+  return offset ? this.bb!.readUint8(this.bb!.__vector(this.bb_pos + offset) + index) : 0;
+}
+
+baseColorTexLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 12);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
+}
+
+baseColorTexArray():Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 12);
+  return offset ? new Uint8Array(this.bb!.bytes().buffer, this.bb!.bytes().byteOffset + this.bb!.__vector(this.bb_pos + offset), this.bb!.__vector_len(this.bb_pos + offset)) : null;
+}
+
 static startMeshData(builder:flatbuffers.Builder) {
-  builder.startObject(4);
+  builder.startObject(5);
 }
 
 static addName(builder:flatbuffers.Builder, nameOffset:flatbuffers.Offset) {
@@ -148,17 +163,34 @@ static startUvsVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(4, numElems, 4);
 }
 
+static addBaseColorTex(builder:flatbuffers.Builder, baseColorTexOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(4, baseColorTexOffset, 0);
+}
+
+static createBaseColorTexVector(builder:flatbuffers.Builder, data:number[]|Uint8Array):flatbuffers.Offset {
+  builder.startVector(1, data.length, 1);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addInt8(data[i]!);
+  }
+  return builder.endVector();
+}
+
+static startBaseColorTexVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(1, numElems, 1);
+}
+
 static endMeshData(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createMeshData(builder:flatbuffers.Builder, nameOffset:flatbuffers.Offset, verticesOffset:flatbuffers.Offset, indicesOffset:flatbuffers.Offset, uvsOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createMeshData(builder:flatbuffers.Builder, nameOffset:flatbuffers.Offset, verticesOffset:flatbuffers.Offset, indicesOffset:flatbuffers.Offset, uvsOffset:flatbuffers.Offset, baseColorTexOffset:flatbuffers.Offset):flatbuffers.Offset {
   MeshData.startMeshData(builder);
   MeshData.addName(builder, nameOffset);
   MeshData.addVertices(builder, verticesOffset);
   MeshData.addIndices(builder, indicesOffset);
   MeshData.addUvs(builder, uvsOffset);
+  MeshData.addBaseColorTex(builder, baseColorTexOffset);
   return MeshData.endMeshData(builder);
 }
 }
