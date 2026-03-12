@@ -23,6 +23,7 @@ pub struct ExtractedMesh {
     pub vertices: Vec<f32>,
     pub indices: Vec<u32>,
     pub uvs: Vec<f32>,
+    pub base_color_tex: Vec<u8>,
 }
 
 fn color_for_path(path: &str) -> [f32; 3] {
@@ -295,6 +296,143 @@ fn compute_world_matrix(reader: &mut dyn AbstractData, mesh_path: &str) -> [f64;
     world
 }
 
+/// Try to read `material:binding` relationship and resolve a base_color texture path.
+fn resolve_material_texture(
+    reader: &mut dyn AbstractData,
+    mesh_path: &str,
+    usd_dir: &Path,
+) -> Option<Vec<u8>> {
+    // Try reading material:binding relationship target
+    let binding_path = sdf::Path::new(&format!("{mesh_path}.material:binding")).ok()?;
+    let val = reader.get(&binding_path, "targetPaths").ok()?;
+    let material_path = match val.into_owned() {
+        sdf::Value::PathListOp(list_op) => {
+            // Relationship targets are typically in explicit_items or prepended_items
+            list_op
+                .explicit_items
+                .first()
+                .or_else(|| list_op.prepended_items.first())
+                .map(|p| p.to_string())
+        }
+        _ => None,
+    }?;
+
+    debug!(mesh = %mesh_path, material = %material_path, "Found material:binding");
+
+    // Walk the material network to find a texture file asset path.
+    // Look for UsdPreviewSurface inputs:diffuseColor or standard_surface base_color
+    // connected to a UsdUVTexture with inputs:file.
+    let tex_path = find_texture_in_material(reader, &material_path, usd_dir);
+    if let Some(ref p) = tex_path {
+        debug!(texture = %p.display(), "Resolved base_color texture path");
+        match std::fs::read(p) {
+            Ok(bytes) => {
+                info!(texture = %p.display(), bytes = bytes.len(), "Read base_color texture");
+                return Some(bytes);
+            }
+            Err(e) => warn!(texture = %p.display(), error = %e, "Failed to read texture file"),
+        }
+    }
+    None
+}
+
+/// Walk a material prim's shader network to find the base_color texture file.
+fn find_texture_in_material(
+    reader: &mut dyn AbstractData,
+    material_path: &str,
+    usd_dir: &Path,
+) -> Option<std::path::PathBuf> {
+    // Look for shader children of the material
+    let children: Vec<String> = get_prim_field(reader, material_path, "primChildren")
+        .and_then(|v| {
+            if let sdf::Value::TokenVec(c) = v {
+                Some(c)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+
+    for child in &children {
+        let shader_path = format!("{material_path}/{child}");
+
+        // Check for inputs:file (UsdUVTexture node) — this is the texture asset path
+        if let Some(sdf::Value::AssetPath(ref asset)) =
+            get_property(reader, &shader_path, "inputs:file")
+        {
+            let resolved = usd_dir.join(asset.trim_start_matches("./"));
+            if resolved.exists() {
+                return Some(resolved);
+            }
+        }
+
+        // Check for inputs:diffuseColor connection that leads to a texture
+        // Recurse into child shader nodes
+        if let Some(path) = find_texture_in_material(reader, &shader_path, usd_dir) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Convention-based fallback: find base_color texture by scanning known directories.
+fn find_texture_by_convention(mesh_name: &str, usd_dir: &Path) -> Option<Vec<u8>> {
+    // Determine piece type and color from mesh name
+    let name_lower = mesh_name.to_lowercase();
+
+    let pieces = ["king", "queen", "bishop", "knight", "rook", "pawn", "chessboard"];
+    let piece = pieces.iter().find(|p| name_lower.contains(*p))?;
+
+    let color = if name_lower.contains("black") {
+        "black"
+    } else if name_lower.contains("white") {
+        "white"
+    } else if *piece == "chessboard" {
+        "" // chessboard has no color variant
+    } else {
+        return None; // Can't determine color
+    };
+
+    // Build texture filename
+    let tex_name = if color.is_empty() {
+        format!("{piece}_base_color.jpg")
+    } else {
+        format!("{piece}_{color}_base_color.jpg")
+    };
+
+    // Capitalize piece name for directory
+    let piece_cap = {
+        let mut c = piece.chars();
+        match c.next() {
+            None => String::new(),
+            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        }
+    };
+
+    // Search in OpenChessSet directory structure
+    let search_paths = [
+        usd_dir.join(format!("OpenChessSet/assets/{piece_cap}/tex/{tex_name}")),
+        usd_dir.join(format!("tex/{tex_name}")),
+        usd_dir.join(&tex_name),
+    ];
+
+    for path in &search_paths {
+        if path.exists() {
+            match std::fs::read(path) {
+                Ok(bytes) => {
+                    info!(mesh = %mesh_name, texture = %path.display(), bytes = bytes.len(),
+                          "Found base_color texture by convention");
+                    return Some(bytes);
+                }
+                Err(e) => warn!(path = %path.display(), error = %e, "Failed to read texture"),
+            }
+        }
+    }
+
+    debug!(mesh = %mesh_name, "No base_color texture found by convention");
+    None
+}
+
 /// Extract mesh geometry from a prim path with an optional additional transform.
 fn extract_mesh_with_transform(
     reader: &mut dyn AbstractData,
@@ -304,6 +442,8 @@ fn extract_mesh_with_transform(
     extra_transform: Option<&[f64; 16]>,
 
     name_override: Option<&str>,
+
+    usd_dir: &Path,
 ) -> Option<ExtractedMesh> {
     let points = get_property(reader, path, "points").and_then(|v| get_f32_array(&v))?;
 
@@ -420,19 +560,25 @@ fn extract_mesh_with_transform(
         return None;
     }
 
-    debug!(name = %name, tris = indices.len() / 3, "Extracted mesh");
+    // Resolve base_color texture: try material:binding first, then convention fallback
+    let base_color_tex = resolve_material_texture(reader, path, usd_dir)
+        .or_else(|| find_texture_by_convention(&name, usd_dir));
+
+    debug!(name = %name, tris = indices.len() / 3,
+           has_texture = base_color_tex.is_some(), "Extracted mesh");
 
     Some(ExtractedMesh {
         name,
         vertices,
         indices,
         uvs,
+        base_color_tex: base_color_tex.unwrap_or_default(),
     })
 }
 
 /// Extract mesh geometry from a prim path (no extra transform).
-fn extract_mesh(reader: &mut dyn AbstractData, path: &str) -> Option<ExtractedMesh> {
-    extract_mesh_with_transform(reader, path, None, None)
+fn extract_mesh(reader: &mut dyn AbstractData, path: &str, usd_dir: &Path) -> Option<ExtractedMesh> {
+    extract_mesh_with_transform(reader, path, None, None, usd_dir)
 }
 
 /// Resolve a PointInstancer: clone prototype meshes at each instance position.
@@ -440,6 +586,8 @@ fn resolve_point_instancer(
     reader: &mut dyn AbstractData,
 
     instancer_path: &str,
+
+    usd_dir: &Path,
 ) -> Vec<ExtractedMesh> {
     let mut meshes = Vec::new();
 
@@ -539,6 +687,7 @@ fn resolve_point_instancer(
                     mesh_path,
                     Some(&instance_mat),
                     Some(&instance_name),
+                    usd_dir,
                 ) {
                     debug!(name = %mesh.name, tris = mesh.indices.len() / 3, "Instanced mesh");
 
@@ -647,6 +796,8 @@ fn find_point_instancers(
 pub fn load_stage(path: &Path) -> Result<Vec<ExtractedMesh>> {
     info!(path = %path.display(), "Loading USD stage");
 
+    let usd_dir = path.parent().unwrap_or_else(|| Path::new("."));
+
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     let mut reader: Box<dyn AbstractData> = match ext {
@@ -668,8 +819,9 @@ pub fn load_stage(path: &Path) -> Result<Vec<ExtractedMesh>> {
     let mut meshes = Vec::new();
 
     for mp in &mesh_paths {
-        if let Some(mesh) = extract_mesh(reader.as_mut(), mp) {
-            info!(name = %mesh.name, tris = mesh.indices.len() / 3, "Loaded mesh");
+        if let Some(mesh) = extract_mesh(reader.as_mut(), mp, usd_dir) {
+            info!(name = %mesh.name, tris = mesh.indices.len() / 3,
+                  tex_bytes = mesh.base_color_tex.len(), "Loaded mesh");
 
             meshes.push(mesh);
         } else {
@@ -687,7 +839,7 @@ pub fn load_stage(path: &Path) -> Result<Vec<ExtractedMesh>> {
         info!(count = instancer_paths.len(), "Found PointInstancers");
 
         for ip in &instancer_paths {
-            let expanded = resolve_point_instancer(reader.as_mut(), ip);
+            let expanded = resolve_point_instancer(reader.as_mut(), ip, usd_dir);
 
             info!(instancer = %ip, expanded = expanded.len(), "Expanded PointInstancer");
 

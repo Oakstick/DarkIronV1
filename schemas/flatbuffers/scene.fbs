@@ -31,6 +31,7 @@ table MeshData {
   vertices: [float];   // Interleaved: pos(3) + normal(3) + color(3) per vertex
   indices: [uint32];   // Changed from uint16
   uvs: [float];        // Texture coordinates: u,v pairs (2 floats per vertex) — meshes can exceed 65K vertices
+  base_color_tex: [ubyte]; // Raw image bytes (JPEG/PNG) for base color texture
 }
 
 /// Published when a scene is fully loaded and ready for rendering

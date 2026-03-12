@@ -1,7 +1,8 @@
-// DarkIron Mesh Shader — basic lit triangles with per-vertex color
+// DarkIron Mesh Shader — PBR base_color texture with Lambertian lighting
 //
-// Vertex format: position (vec3f) + normal (vec3f) + color (vec3f)
+// Vertex format: position (vec3f) + normal (vec3f) + color (vec3f) + uv (vec2f)
 // Uniforms:      viewProj (mat4x4f) + model (mat4x4f)
+// Texture:       base_color texture + sampler (group 1)
 
 struct Uniforms {
   viewProj: mat4x4f,
@@ -9,17 +10,21 @@ struct Uniforms {
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
+@group(1) @binding(0) var base_tex: texture_2d<f32>;
+@group(1) @binding(1) var base_samp: sampler;
 
 struct VertexInput {
   @location(0) position: vec3f,
   @location(1) normal: vec3f,
   @location(2) color: vec3f,
+  @location(3) uv: vec2f,
 }
 
 struct VertexOutput {
   @builtin(position) clip_position: vec4f,
   @location(0) color: vec3f,
   @location(1) world_normal: vec3f,
+  @location(2) uv: vec2f,
 }
 
 @vertex
@@ -29,14 +34,15 @@ fn vs(input: VertexInput) -> VertexOutput {
   out.clip_position = u.viewProj * world_pos;
   out.color = input.color;
   out.world_normal = normalize((u.model * vec4f(input.normal, 0.0)).xyz);
+  out.uv = input.uv;
   return out;
 }
 
 @fragment
 fn fs(input: VertexOutput) -> @location(0) vec4f {
+  let tex_color = textureSample(base_tex, base_samp, input.uv);
   let light_dir = normalize(vec3f(0.5, 1.0, 0.8));
   let diffuse = max(dot(normalize(input.world_normal), light_dir), 0.0);
   let lit = 0.3 + diffuse * 0.7;
-  return vec4f(input.color * lit, 1.0);
+  return vec4f(tex_color.rgb * lit, 1.0);
 }
-

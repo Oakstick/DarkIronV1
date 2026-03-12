@@ -21,7 +21,13 @@ import { AssetCooked } from "../../../schemas/generated/ts/darkiron/schema/asset
 export interface SceneLoadedEvent {
   type: "SceneLoaded";
   sessionId: string;
-  meshes: Array<{ name: string; vertices: number[]; indices: number[]; uvs: number[] }>;
+  meshes: Array<{
+    name: string;
+    vertices: number[];
+    indices: number[];
+    uvs: number[];
+    baseColorTex: Uint8Array | null;
+  }>;
 }
 
 export interface TransformChangedEvent {
@@ -78,10 +84,14 @@ function decodeSceneLoaded(event: SceneEvent): SceneLoadedEvent {
     if (!mesh) continue;
     const verticesArr = mesh.verticesArray();
     const indicesArr = mesh.indicesArray();
+    const uvsArr = mesh.uvsArray();
+    const texArr = mesh.baseColorTexArray();
     meshes.push({
       name: mesh.name() || `mesh_${i}`,
       vertices: verticesArr ? Array.from(verticesArr) : [],
       indices: indicesArr ? Array.from(indicesArr) : [],
+      uvs: uvsArr ? Array.from(uvsArr) : [],
+      baseColorTex: texArr ?? null,
     });
   }
 

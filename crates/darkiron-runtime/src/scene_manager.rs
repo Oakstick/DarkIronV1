@@ -66,19 +66,23 @@ pub fn build_cube_scene(session_id: &str) -> Vec<u8> {
         indices.extend_from_slice(&[vi, vi + 1, vi + 2, vi, vi + 2, vi + 3]);
         vi += 4;
     }
-    meshes_to_flatbuffers(session_id, &[("default_cube", &vertices, &indices, &[])])
+    meshes_to_flatbuffers(session_id, &[("default_cube", &vertices, &indices, &[], &[])])
 }
 
+/// Mesh data tuple: (name, vertices, indices, uvs, base_color_tex_bytes)
+type MeshTuple<'a> = (&'a str, &'a [f32], &'a [u32], &'a [f32], &'a [u8]);
+
 /// Convert a list of meshes to FlatBuffers SceneEvent bytes.
-fn meshes_to_flatbuffers(session_id: &str, meshes: &[(&str, &[f32], &[u32], &[f32])]) -> Vec<u8> {
+fn meshes_to_flatbuffers(session_id: &str, meshes: &[MeshTuple<'_>]) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024 * 1024);
     let mut mesh_offsets = Vec::new();
 
-    for &(name_str, verts, idxs, uvs) in meshes {
+    for &(name_str, verts, idxs, uvs, tex) in meshes {
         let name = builder.create_string(name_str);
         let verts_vec = builder.create_vector(verts);
         let idx_vec = builder.create_vector(idxs);
         let uvs_vec = if uvs.is_empty() { None } else { Some(builder.create_vector(uvs)) };
+        let tex_vec = if tex.is_empty() { None } else { Some(builder.create_vector(tex)) };
         let mesh = fb::MeshData::create(
             &mut builder,
             &fb::MeshDataArgs {
@@ -86,6 +90,7 @@ fn meshes_to_flatbuffers(session_id: &str, meshes: &[(&str, &[f32], &[u32], &[f3
                 vertices: Some(verts_vec),
                 indices: Some(idx_vec),
                 uvs: uvs_vec,
+                base_color_tex: tex_vec,
             },
         );
         mesh_offsets.push(mesh);
@@ -122,9 +127,9 @@ pub fn load_usd_file(path: &Path, session_id: &str) -> Result<Vec<Vec<u8>>> {
 
     let mut payloads = Vec::new();
     for chunk in extracted.chunks(1) {
-        let mesh_data: Vec<(&str, &[f32], &[u32], &[f32])> = chunk
+        let mesh_data: Vec<MeshTuple<'_>> = chunk
             .iter()
-            .map(|m| (m.name.as_str(), m.vertices.as_slice(), m.indices.as_slice(), m.uvs.as_slice()))
+            .map(|m| (m.name.as_str(), m.vertices.as_slice(), m.indices.as_slice(), m.uvs.as_slice(), m.base_color_tex.as_slice()))
             .collect();
         payloads.push(meshes_to_flatbuffers(session_id, &mesh_data));
     }
@@ -177,6 +182,7 @@ pub fn load_scene_file(path: &Path, session_id: &str) -> Result<Vec<u8>> {
                 vertices: Some(verts_vec),
                 indices: Some(idx_vec),
                 uvs: None,
+                base_color_tex: None,
             },
         );
         mesh_offsets.push(mesh);

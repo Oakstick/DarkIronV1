@@ -2,6 +2,8 @@ export interface MeshData {
   name: string;
   vertices: number[];
   indices: number[];
+  uvs?: number[];
+  baseColorTex?: Uint8Array | null;
   transform?: { position?: number[]; rotation?: number[]; scale?: number[] };
 }
 export interface RendererConfig {
@@ -73,15 +75,21 @@ function genAxis(len: number): { v: Float32Array; n: number } {
   return { v: new Float32Array(d), n: d.length / 6 };
 }
 
+// Mesh shader with UV + texture sampling (group 1 for texture bindings)
 const MESH_SHADER = `
 struct Uniforms{viewProj:mat4x4f,model:mat4x4f}
 @group(0)@binding(0)var<uniform> u:Uniforms;
-struct VI{@location(0)p:vec3f,@location(1)n:vec3f,@location(2)c:vec3f}
-struct VO{@builtin(position)p:vec4f,@location(0)c:vec3f,@location(1)n:vec3f}
+@group(1)@binding(0)var base_tex:texture_2d<f32>;
+@group(1)@binding(1)var base_samp:sampler;
+struct VI{@location(0)p:vec3f,@location(1)n:vec3f,@location(2)c:vec3f,@location(3)uv:vec2f}
+struct VO{@builtin(position)p:vec4f,@location(0)c:vec3f,@location(1)n:vec3f,@location(2)uv:vec2f}
 @vertex fn vs(i:VI)->VO{var o:VO;let wp=u.model*vec4f(i.p,1.0);o.p=u.viewProj*wp;o.c=i.c;
-  o.n=normalize((u.model*vec4f(i.n,0.0)).xyz);return o;}
-@fragment fn fs(i:VO)->@location(0)vec4f{let ld=normalize(vec3f(0.5,1.0,0.8));
-  let lit=0.3+max(dot(normalize(i.n),ld),0.0)*0.7;return vec4f(i.c*lit,1.0);}`;
+  o.n=normalize((u.model*vec4f(i.n,0.0)).xyz);o.uv=i.uv;return o;}
+@fragment fn fs(i:VO)->@location(0)vec4f{
+  let tex=textureSample(base_tex,base_samp,i.uv);
+  let ld=normalize(vec3f(0.5,1.0,0.8));
+  let lit=0.3+max(dot(normalize(i.n),ld),0.0)*0.7;
+  return vec4f(tex.rgb*lit,1.0);}`;
 
 const LINE_SHADER = `
 struct Uniforms{viewProj:mat4x4f,model:mat4x4f}
@@ -97,6 +105,33 @@ interface GPUMesh {
   iBuf: GPUBuffer;
   iCount: number;
   model: Float32Array;
+  texBg: GPUBindGroup; // per-mesh texture bind group (group 1)
+  tex?: GPUTexture; // owned texture (destroyed on cleanup)
+}
+
+/** Interleave pos(3)+normal(3)+color(3) vertices with uv(2) into 11-float stride */
+function interleaveWithUVs(vertices: number[], uvs: number[]): Float32Array {
+  const vertCount = vertices.length / 9;
+  const out = new Float32Array(vertCount * 11);
+  for (let i = 0; i < vertCount; i++) {
+    // Copy pos + normal + color (9 floats)
+    out[i * 11] = vertices[i * 9] as number;
+    out[i * 11 + 1] = vertices[i * 9 + 1] as number;
+    out[i * 11 + 2] = vertices[i * 9 + 2] as number;
+    out[i * 11 + 3] = vertices[i * 9 + 3] as number;
+    out[i * 11 + 4] = vertices[i * 9 + 4] as number;
+    out[i * 11 + 5] = vertices[i * 9 + 5] as number;
+    out[i * 11 + 6] = vertices[i * 9 + 6] as number;
+    out[i * 11 + 7] = vertices[i * 9 + 7] as number;
+    out[i * 11 + 8] = vertices[i * 9 + 8] as number;
+    // Append UV (2 floats)
+    if (uvs.length > 0 && i * 2 + 1 < uvs.length) {
+      out[i * 11 + 9] = uvs[i * 2] as number;
+      out[i * 11 + 10] = uvs[i * 2 + 1] as number;
+    }
+    // else 0,0 from Float32Array initialization
+  }
+  return out;
 }
 
 export class DarkIronRenderer {
@@ -106,7 +141,11 @@ export class DarkIronRenderer {
   private linePipe: GPURenderPipeline | null = null;
   private depthTex: GPUTexture | null = null;
   private uBuf: GPUBuffer | null = null;
-  private bg: GPUBindGroup | null = null;
+  private uniformBg: GPUBindGroup | null = null;
+  private texBgl: GPUBindGroupLayout | null = null;
+  private defaultTexBg: GPUBindGroup | null = null;
+  private defaultTex: GPUTexture | null = null;
+  private sampler: GPUSampler | null = null;
   private meshes: GPUMesh[] = [];
   private gridBuf: GPUBuffer | null = null;
   private gridN = 0;
@@ -114,6 +153,7 @@ export class DarkIronRenderer {
   private axisN = 0;
   private cam = new OrbitalCamera();
   constructor(private config: RendererConfig) {}
+
   async initialize(): Promise<boolean> {
     if (!navigator.gpu) return false;
     const ad = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
@@ -122,31 +162,77 @@ export class DarkIronRenderer {
     this.ctx = this.config.canvas.getContext("webgpu") as GPUCanvasContext;
     const fmt = navigator.gpu.getPreferredCanvasFormat();
     this.ctx.configure({ device: this.dev, format: fmt, alphaMode: "premultiplied" });
+
+    // Uniform buffer (viewProj + model = 2 * mat4x4f = 128 bytes)
     this.uBuf = this.dev.createBuffer({
       size: 128,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    const bgl = this.dev.createBindGroupLayout({
+
+    // Group 0: uniforms
+    const uniformBgl = this.dev.createBindGroupLayout({
       entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }],
     });
-    this.bg = this.dev.createBindGroup({
-      layout: bgl,
+    this.uniformBg = this.dev.createBindGroup({
+      layout: uniformBgl,
       entries: [{ binding: 0, resource: { buffer: this.uBuf } }],
     });
-    const lay = this.dev.createPipelineLayout({ bindGroupLayouts: [bgl] });
+
+    // Group 1: texture + sampler (per-mesh)
+    this.texBgl = this.dev.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+      ],
+    });
+
+    // Shared sampler (linear filtering, repeat wrap)
+    this.sampler = this.dev.createSampler({
+      magFilter: "linear",
+      minFilter: "linear",
+      mipmapFilter: "linear",
+      addressModeU: "repeat",
+      addressModeV: "repeat",
+    });
+
+    // Default 1x1 white texture for meshes without textures
+    this.defaultTex = this.dev.createTexture({
+      size: [1, 1],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.dev.queue.writeTexture(
+      { texture: this.defaultTex },
+      new Uint8Array([255, 255, 255, 255]),
+      { bytesPerRow: 4 },
+      [1, 1],
+    );
+    this.defaultTexBg = this.dev.createBindGroup({
+      layout: this.texBgl,
+      entries: [
+        { binding: 0, resource: this.defaultTex.createView() },
+        { binding: 1, resource: this.sampler },
+      ],
+    });
+
+    // Mesh pipeline: 2 bind group layouts (uniform + texture)
+    const meshLayout = this.dev.createPipelineLayout({
+      bindGroupLayouts: [uniformBgl, this.texBgl],
+    });
     const ms = this.dev.createShaderModule({ code: MESH_SHADER });
     this.meshPipe = this.dev.createRenderPipeline({
-      layout: lay,
+      layout: meshLayout,
       vertex: {
         module: ms,
         entryPoint: "vs",
         buffers: [
           {
-            arrayStride: 36,
+            arrayStride: 44, // 11 floats: pos(3) + normal(3) + color(3) + uv(2)
             attributes: [
-              { shaderLocation: 0, offset: 0, format: "float32x3" },
-              { shaderLocation: 1, offset: 12, format: "float32x3" },
-              { shaderLocation: 2, offset: 24, format: "float32x3" },
+              { shaderLocation: 0, offset: 0, format: "float32x3" }, // position
+              { shaderLocation: 1, offset: 12, format: "float32x3" }, // normal
+              { shaderLocation: 2, offset: 24, format: "float32x3" }, // color
+              { shaderLocation: 3, offset: 36, format: "float32x2" }, // uv
             ],
           },
         ],
@@ -155,9 +241,12 @@ export class DarkIronRenderer {
       primitive: { topology: "triangle-list", cullMode: "none" },
       depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
     });
+
+    // Line pipeline: only uniform bind group
+    const lineLayout = this.dev.createPipelineLayout({ bindGroupLayouts: [uniformBgl] });
     const ls = this.dev.createShaderModule({ code: LINE_SHADER });
     this.linePipe = this.dev.createRenderPipeline({
-      layout: lay,
+      layout: lineLayout,
       vertex: {
         module: ls,
         entryPoint: "vs",
@@ -175,6 +264,7 @@ export class DarkIronRenderer {
       primitive: { topology: "line-list" },
       depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
     });
+
     const grid = genGrid(1, 20);
     this.gridBuf = this.dev.createBuffer({
       size: grid.v.byteLength,
@@ -230,13 +320,46 @@ export class DarkIronRenderer {
     console.log("[DarkIron Renderer] Initialized (WebGPU)");
     return true;
   }
+
   get meshCount(): number {
     return this.meshes.length;
   }
-  uploadMesh(mesh: MeshData): void {
-    if (!this.dev) throw new Error("Not init");
-    const v = new Float32Array(mesh.vertices);
+
+  /** Create a GPU texture from raw JPEG/PNG bytes */
+  private async createTextureFromBytes(bytes: Uint8Array): Promise<GPUTexture | null> {
+    if (!this.dev) return null;
+    try {
+      const blob = new Blob([bytes]);
+      const bitmap = await createImageBitmap(blob);
+      const tex = this.dev.createTexture({
+        size: [bitmap.width, bitmap.height],
+        format: "rgba8unorm",
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.dev.queue.copyExternalImageToTexture(
+        { source: bitmap },
+        { texture: tex },
+        [bitmap.width, bitmap.height],
+      );
+      bitmap.close();
+      return tex;
+    } catch (err) {
+      console.warn("[DarkIron Renderer] Failed to decode texture:", err);
+      return null;
+    }
+  }
+
+  async uploadMesh(mesh: MeshData): Promise<void> {
+    if (!this.dev || !this.texBgl || !this.sampler || !this.defaultTexBg)
+      throw new Error("Not init");
+
+    // Interleave vertices with UVs into 11-float stride
+    const v = interleaveWithUVs(mesh.vertices, mesh.uvs ?? []);
     const idx = new Uint32Array(mesh.indices);
+
     const vBuf = this.dev.createBuffer({
       size: v.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -247,30 +370,55 @@ export class DarkIronRenderer {
       usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
     });
     this.dev.queue.writeBuffer(iBuf, 0, idx);
+
     const t = mesh.transform || {};
     const pos = t.position || [0, 0, 0];
     const rot = t.rotation || [0, 0, 0];
     const scl = t.scale || [1, 1, 1];
     const model = mat4FromTRS(createMat4(), pos, rot, scl);
+
+    // Create per-mesh texture bind group
+    let tex: GPUTexture | undefined;
+    let texBg = this.defaultTexBg;
+    if (mesh.baseColorTex && mesh.baseColorTex.byteLength > 0) {
+      const gpuTex = await this.createTextureFromBytes(mesh.baseColorTex);
+      if (gpuTex) {
+        tex = gpuTex;
+        texBg = this.dev.createBindGroup({
+          layout: this.texBgl,
+          entries: [
+            { binding: 0, resource: gpuTex.createView() },
+            { binding: 1, resource: this.sampler },
+          ],
+        });
+      }
+    }
+
     const ex = this.meshes.findIndex((m) => m.name === mesh.name);
     if (ex >= 0) {
-      this.meshes[ex].vBuf.destroy();
-      this.meshes[ex].iBuf.destroy();
-      this.meshes[ex] = { name: mesh.name, vBuf, iBuf, iCount: idx.length, model };
+      const old = this.meshes[ex] as GPUMesh;
+      old.vBuf.destroy();
+      old.iBuf.destroy();
+      old.tex?.destroy();
+      this.meshes[ex] = { name: mesh.name, vBuf, iBuf, iCount: idx.length, model, texBg, tex };
     } else {
-      this.meshes.push({ name: mesh.name, vBuf, iBuf, iCount: idx.length, model });
+      this.meshes.push({ name: mesh.name, vBuf, iBuf, iCount: idx.length, model, texBg, tex });
     }
+    const hasTex = tex ? " [textured]" : "";
     console.log(
-      `[DarkIron Renderer] Mesh: ${mesh.name} (${idx.length} idx, ${this.meshes.length} total)`,
+      `[DarkIron Renderer] Mesh: ${mesh.name} (${idx.length} idx, ${this.meshes.length} total)${hasTex}`,
     );
   }
+
   clearMeshes(): void {
     for (const m of this.meshes) {
       m.vBuf.destroy();
       m.iBuf.destroy();
+      m.tex?.destroy();
     }
     this.meshes = [];
   }
+
   render(): void {
     if (
       !this.dev ||
@@ -279,7 +427,7 @@ export class DarkIronRenderer {
       !this.linePipe ||
       !this.depthTex ||
       !this.uBuf ||
-      !this.bg
+      !this.uniformBg
     )
       return;
     const vp = this.cam.viewProj(this.config.canvas.width / this.config.canvas.height);
@@ -304,20 +452,21 @@ export class DarkIronRenderer {
     this.dev.queue.writeBuffer(this.uBuf, 64, mat4Identity(createMat4()));
     if (this.gridBuf) {
       pass.setPipeline(this.linePipe);
-      pass.setBindGroup(0, this.bg);
+      pass.setBindGroup(0, this.uniformBg);
       pass.setVertexBuffer(0, this.gridBuf);
       pass.draw(this.gridN);
     }
     if (this.axisBuf) {
       pass.setPipeline(this.linePipe);
-      pass.setBindGroup(0, this.bg);
+      pass.setBindGroup(0, this.uniformBg);
       pass.setVertexBuffer(0, this.axisBuf);
       pass.draw(this.axisN);
     }
     for (const m of this.meshes) {
       this.dev.queue.writeBuffer(this.uBuf, 64, m.model);
       pass.setPipeline(this.meshPipe);
-      pass.setBindGroup(0, this.bg);
+      pass.setBindGroup(0, this.uniformBg);
+      pass.setBindGroup(1, m.texBg);
       pass.setVertexBuffer(0, m.vBuf);
       pass.setIndexBuffer(m.iBuf, "uint32");
       pass.drawIndexed(m.iCount);
@@ -325,12 +474,14 @@ export class DarkIronRenderer {
     pass.end();
     this.dev.queue.submit([enc.finish()]);
   }
+
   destroy(): void {
     this.clearMeshes();
     this.uBuf?.destroy();
     this.depthTex?.destroy();
     this.gridBuf?.destroy();
     this.axisBuf?.destroy();
+    this.defaultTex?.destroy();
     this.dev?.destroy();
     console.log("[DarkIron Renderer] Destroyed");
   }
