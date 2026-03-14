@@ -10,7 +10,7 @@ export interface RendererConfig {
   canvas: HTMLCanvasElement;
 }
 
-import { createMat4, lookAt, perspective, mat4Mul, mat4Identity, mat4FromTRS } from "./utils/mat4";
+import { createMat4, lookAt, mat4FromTRS, mat4Identity, mat4Mul, perspective } from "./utils/mat4";
 
 class OrbitalCamera {
   theta = Math.PI * 0.25;
@@ -113,7 +113,7 @@ interface GPUMesh {
  *  @webgpu/types defines writeBuffer(data: GPUAllowSharedBufferSource) which
  *  requires ArrayBufferView<ArrayBuffer>, but TS 5.7+ typed arrays use
  *  ArrayBufferView<ArrayBufferLike>. This is a safe narrowing cast. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: WebGPU GPUAllowSharedBufferSource requires ArrayBuffer but TS 5.7+ typed arrays use ArrayBufferLike
 const gpuData = (data: Float32Array | Uint32Array | Uint16Array): any => data;
 
 /** Interleave pos(3)+normal(3)+color(3) vertices with uv(2) into 11-float stride */
@@ -346,11 +346,10 @@ export class DarkIronRenderer {
           GPUTextureUsage.COPY_DST |
           GPUTextureUsage.RENDER_ATTACHMENT,
       });
-      this.dev.queue.copyExternalImageToTexture(
-        { source: bitmap },
-        { texture: tex },
-        [bitmap.width, bitmap.height],
-      );
+      this.dev.queue.copyExternalImageToTexture({ source: bitmap }, { texture: tex }, [
+        bitmap.width,
+        bitmap.height,
+      ]);
       bitmap.close();
       return tex;
     } catch (err) {

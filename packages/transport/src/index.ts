@@ -8,13 +8,13 @@
 
 import * as flatbuffers from "flatbuffers";
 import { type NatsConnection, type Subscription, connect } from "nats.ws";
+import { AssetCooked } from "../../../schemas/generated/ts/darkiron/schema/asset-cooked";
+import { PrimCreated } from "../../../schemas/generated/ts/darkiron/schema/prim-created";
+import { PrimDeleted } from "../../../schemas/generated/ts/darkiron/schema/prim-deleted";
 import { SceneEvent } from "../../../schemas/generated/ts/darkiron/schema/scene-event";
 import { SceneEventPayload } from "../../../schemas/generated/ts/darkiron/schema/scene-event-payload";
 import { SceneLoaded } from "../../../schemas/generated/ts/darkiron/schema/scene-loaded";
 import { TransformChanged } from "../../../schemas/generated/ts/darkiron/schema/transform-changed";
-import { PrimCreated } from "../../../schemas/generated/ts/darkiron/schema/prim-created";
-import { PrimDeleted } from "../../../schemas/generated/ts/darkiron/schema/prim-deleted";
-import { AssetCooked } from "../../../schemas/generated/ts/darkiron/schema/asset-cooked";
 
 // ─── Typed event interfaces ─────────────────────────────────
 
@@ -251,4 +251,3 @@ export async function createTransport(url = "ws://localhost:9222"): Promise<Dark
   await transport.connect();
   return transport;
 }
-

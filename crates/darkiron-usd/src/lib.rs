@@ -380,7 +380,15 @@ fn find_texture_by_convention(mesh_name: &str, usd_dir: &Path) -> Option<Vec<u8>
     // Determine piece type and color from mesh name
     let name_lower = mesh_name.to_lowercase();
 
-    let pieces = ["king", "queen", "bishop", "knight", "rook", "pawn", "chessboard"];
+    let pieces = [
+        "king",
+        "queen",
+        "bishop",
+        "knight",
+        "rook",
+        "pawn",
+        "chessboard",
+    ];
     let piece = pieces.iter().find(|p| name_lower.contains(*p))?;
 
     let color = if name_lower.contains("black") {
@@ -538,8 +546,14 @@ fn extract_mesh_with_transform(
             // Extract UV (faceVarying: indexed by fvi_off + j)
             let (u, v) = if let Some(ref st) = uvs_raw {
                 let ui = (fvi_off + j) * 2;
-                if ui + 1 < st.len() { (st[ui], st[ui + 1]) } else { (0.0, 0.0) }
-            } else { (0.0, 0.0) };
+                if ui + 1 < st.len() {
+                    (st[ui], st[ui + 1])
+                } else {
+                    (0.0, 0.0)
+                }
+            } else {
+                (0.0, 0.0)
+            };
             uvs.extend_from_slice(&[u, v]);
 
             vertices.extend_from_slice(&[px, py, pz, nx, ny, nz, color[0], color[1], color[2]]);
@@ -577,7 +591,11 @@ fn extract_mesh_with_transform(
 }
 
 /// Extract mesh geometry from a prim path (no extra transform).
-fn extract_mesh(reader: &mut dyn AbstractData, path: &str, usd_dir: &Path) -> Option<ExtractedMesh> {
+fn extract_mesh(
+    reader: &mut dyn AbstractData,
+    path: &str,
+    usd_dir: &Path,
+) -> Option<ExtractedMesh> {
     extract_mesh_with_transform(reader, path, None, None, usd_dir)
 }
 

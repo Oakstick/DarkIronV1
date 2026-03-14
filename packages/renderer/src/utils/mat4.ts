@@ -30,7 +30,12 @@ export function mat4Mul(out: Float32Array, a: Float32Array, b: Float32Array): Fl
 /**
  * Build a look-at view matrix into `out`. Returns `out`.
  */
-export function lookAt(out: Float32Array, eye: number[], target: number[], up: number[]): Float32Array {
+export function lookAt(
+  out: Float32Array,
+  eye: number[],
+  target: number[],
+  up: number[],
+): Float32Array {
   return m4.lookAt(
     out,
     vec3.fromValues(eye[0] ?? 0, eye[1] ?? 0, eye[2] ?? 0),
@@ -42,7 +47,13 @@ export function lookAt(out: Float32Array, eye: number[], target: number[], up: n
 /**
  * Build a perspective projection matrix into `out`. Returns `out`.
  */
-export function perspective(out: Float32Array, fovY: number, aspect: number, near: number, far: number): Float32Array {
+export function perspective(
+  out: Float32Array,
+  fovY: number,
+  aspect: number,
+  near: number,
+  far: number,
+): Float32Array {
   return m4.perspective(out, fovY, aspect, near, far) as Float32Array;
 }
 
@@ -50,7 +61,12 @@ export function perspective(out: Float32Array, fovY: number, aspect: number, nea
  * Build a model matrix from TRS into `out`. Returns `out`.
  * Rotation order: X then Y then Z (Euler degrees).
  */
-export function mat4FromTRS(out: Float32Array, position: number[], rotation: number[], scale: number[]): Float32Array {
+export function mat4FromTRS(
+  out: Float32Array,
+  position: number[],
+  rotation: number[],
+  scale: number[],
+): Float32Array {
   m4.identity(out);
   m4.translate(out, out, vec3.fromValues(position[0] ?? 0, position[1] ?? 0, position[2] ?? 0));
   m4.rotateX(out, out, ((rotation[0] ?? 0) * Math.PI) / 180);
@@ -59,4 +75,3 @@ export function mat4FromTRS(out: Float32Array, position: number[], rotation: num
   m4.scale(out, out, vec3.fromValues(scale[0] ?? 0, scale[1] ?? 0, scale[2] ?? 0));
   return out;
 }
-

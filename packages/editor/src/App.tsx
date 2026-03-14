@@ -1,5 +1,5 @@
 import { DarkIronRenderer, type MeshData } from "@darkiron/renderer";
-import { type DarkIronTransport, type DarkIronEvent, createTransport } from "@darkiron/transport";
+import { type DarkIronEvent, type DarkIronTransport, createTransport } from "@darkiron/transport";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MenuBar, type MenuDefinition } from "./components/MenuBar";
 
@@ -44,7 +44,9 @@ export function App() {
         }
       } catch (err) {
         console.error("[Editor] Failed to load file:", err);
-        alert("Failed to load file. Only JSON scene files supported via File > Open.\nFor USD files, place them in assets/ and restart the runtime.");
+        alert(
+          "Failed to load file. Only JSON scene files supported via File > Open.\nFor USD files, place them in assets/ and restart the runtime.",
+        );
       }
     };
     input.click();
@@ -103,7 +105,13 @@ export function App() {
         { label: "Save As...", shortcut: "Ctrl+Shift+S", disabled: true },
         "separator",
         { label: "Export Scene...", action: handleExportScene, disabled: true },
-        { label: "Import USD...", action: () => alert("To load USD scenes, place .usda/.usdc files in the assets/ directory.\nThe Rust runtime loads them on startup and hot-reloads on changes.") },
+        {
+          label: "Import USD...",
+          action: () =>
+            alert(
+              "To load USD scenes, place .usda/.usdc files in the assets/ directory.\nThe Rust runtime loads them on startup and hot-reloads on changes.",
+            ),
+        },
         "separator",
         { label: "Preferences...", disabled: true },
       ],
@@ -181,29 +189,31 @@ export function App() {
             case "SceneLoaded":
               if (event.meshes && rendererRef.current) {
                 for (const mesh of event.meshes) {
-                  rendererRef.current.uploadMesh({
-                    name: mesh.name,
-                    vertices: mesh.vertices,
-                    indices: mesh.indices,
-                    uvs: mesh.uvs,
-                    baseColorTex: mesh.baseColorTex,
-                  }).then(() => {
-                    setMsgCount(rendererRef.current?.meshCount ?? 0);
-                  });
+                  rendererRef.current
+                    .uploadMesh({
+                      name: mesh.name,
+                      vertices: mesh.vertices,
+                      indices: mesh.indices,
+                      uvs: mesh.uvs,
+                      baseColorTex: mesh.baseColorTex,
+                    })
+                    .then(() => {
+                      setMsgCount(rendererRef.current?.meshCount ?? 0);
+                    });
                 }
               }
               break;
             case "TransformChanged":
-              console.log("[Editor] Transform: " + event.primPath);
+              console.log(`[Editor] Transform: ${event.primPath}`);
               break;
             case "PrimCreated":
-              console.log("[Editor] Created: " + event.primPath);
+              console.log(`[Editor] Created: ${event.primPath}`);
               break;
             case "PrimDeleted":
-              console.log("[Editor] Deleted: " + event.primPath);
+              console.log(`[Editor] Deleted: ${event.primPath}`);
               break;
             case "AssetCooked":
-              console.log("[Editor] Cooked: " + event.assetName);
+              console.log(`[Editor] Cooked: ${event.assetName}`);
               break;
           }
         });
