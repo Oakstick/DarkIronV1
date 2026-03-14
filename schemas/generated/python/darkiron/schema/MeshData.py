@@ -113,8 +113,46 @@ class MeshData(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         return o == 0
 
+    # MeshData
+    def BaseColorTex(self, j):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
+        if o != 0:
+            a = self._tab.Vector(o)
+            return self._tab.Get(flatbuffers.number_types.Uint8Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 1))
+        return 0
+
+    # MeshData
+    def BaseColorTexAsNumpy(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
+        if o != 0:
+            return self._tab.GetVectorAsNumpy(flatbuffers.number_types.Uint8Flags, o)
+        return 0
+
+    # MeshData
+    def BaseColorTexLength(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
+        if o != 0:
+            return self._tab.VectorLen(o)
+        return 0
+
+    # MeshData
+    def BaseColorTexIsNone(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
+        return o == 0
+
+    # MeshData
+    def Material(self):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
+        if o != 0:
+            x = self._tab.Indirect(o + self._tab.Pos)
+            from darkiron.schema.MaterialData import MaterialData
+            obj = MaterialData()
+            obj.Init(self._tab.Bytes, x)
+            return obj
+        return None
+
 def MeshDataStart(builder):
-    builder.StartObject(4)
+    builder.StartObject(6)
 
 def Start(builder):
     MeshDataStart(builder)
@@ -160,6 +198,24 @@ def MeshDataStartUvsVector(builder, numElems):
 
 def StartUvsVector(builder, numElems):
     return MeshDataStartUvsVector(builder, numElems)
+
+def MeshDataAddBaseColorTex(builder, baseColorTex):
+    builder.PrependUOffsetTRelativeSlot(4, flatbuffers.number_types.UOffsetTFlags.py_type(baseColorTex), 0)
+
+def AddBaseColorTex(builder, baseColorTex):
+    MeshDataAddBaseColorTex(builder, baseColorTex)
+
+def MeshDataStartBaseColorTexVector(builder, numElems):
+    return builder.StartVector(1, numElems, 1)
+
+def StartBaseColorTexVector(builder, numElems):
+    return MeshDataStartBaseColorTexVector(builder, numElems)
+
+def MeshDataAddMaterial(builder, material):
+    builder.PrependUOffsetTRelativeSlot(5, flatbuffers.number_types.UOffsetTFlags.py_type(material), 0)
+
+def AddMaterial(builder, material):
+    MeshDataAddMaterial(builder, material)
 
 def MeshDataEnd(builder):
     return builder.EndObject()

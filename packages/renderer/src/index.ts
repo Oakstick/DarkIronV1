@@ -1,9 +1,18 @@
+export interface MeshMaterial {
+  name?: string | null;
+  baseColorPath?: string | null;
+  normalPath?: string | null;
+  roughnessPath?: string | null;
+  metallicPath?: string | null;
+}
+
 export interface MeshData {
   name: string;
   vertices: number[];
   indices: number[];
   uvs?: number[];
   baseColorTex?: Uint8Array | null;
+  material?: MeshMaterial | null;
   transform?: { position?: number[]; rotation?: number[]; scale?: number[] };
 }
 export interface RendererConfig {
@@ -154,6 +163,7 @@ export class DarkIronRenderer {
   private defaultTex: GPUTexture | null = null;
   private sampler: GPUSampler | null = null;
   private meshes: GPUMesh[] = [];
+  private texCache: Map<string, GPUTexture> = new Map();
   private gridBuf: GPUBuffer | null = null;
   private gridN = 0;
   private axisBuf: GPUBuffer | null = null;
@@ -358,6 +368,37 @@ export class DarkIronRenderer {
     }
   }
 
+  /** Fetch a texture by URL with caching (shared textures are fetched once) */
+  private async getTextureByURL(url: string): Promise<GPUTexture | null> {
+    if (!this.dev) return null;
+    const cached = this.texCache.get(url);
+    if (cached) return cached;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const bitmap = await createImageBitmap(blob);
+      const tex = this.dev.createTexture({
+        size: [bitmap.width, bitmap.height],
+        format: "rgba8unorm",
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.dev.queue.copyExternalImageToTexture({ source: bitmap }, { texture: tex }, [
+        bitmap.width,
+        bitmap.height,
+      ]);
+      bitmap.close();
+      this.texCache.set(url, tex);
+      return tex;
+    } catch (err) {
+      console.warn(`[DarkIron Renderer] Failed to fetch texture ${url}:`, err);
+      return null;
+    }
+  }
+
   async uploadMesh(mesh: MeshData): Promise<void> {
     if (!this.dev || !this.texBgl || !this.sampler || !this.defaultTexBg)
       throw new Error("Not init");
@@ -383,10 +424,27 @@ export class DarkIronRenderer {
     const scl = t.scale || [1, 1, 1];
     const model = mat4FromTRS(createMat4(), pos, rot, scl);
 
-    // Create per-mesh texture bind group
+    // Create per-mesh texture bind group — prefer material paths over raw bytes
     let tex: GPUTexture | undefined;
     let texBg = this.defaultTexBg;
-    if (mesh.baseColorTex && mesh.baseColorTex.byteLength > 0) {
+    let isCachedTex = false;
+
+    if (mesh.material?.baseColorPath) {
+      // Path-based: fetch via HTTP with caching
+      const url = `/textures/${mesh.material.baseColorPath}`;
+      const gpuTex = await this.getTextureByURL(url);
+      if (gpuTex) {
+        isCachedTex = true; // Don't destroy cached textures per-mesh
+        texBg = this.dev.createBindGroup({
+          layout: this.texBgl,
+          entries: [
+            { binding: 0, resource: gpuTex.createView() },
+            { binding: 1, resource: this.sampler },
+          ],
+        });
+      }
+    } else if (mesh.baseColorTex && mesh.baseColorTex.byteLength > 0) {
+      // Fallback: raw bytes (deprecated path)
       const gpuTex = await this.createTextureFromBytes(mesh.baseColorTex);
       if (gpuTex) {
         tex = gpuTex;
@@ -405,10 +463,26 @@ export class DarkIronRenderer {
       const old = this.meshes[ex] as GPUMesh;
       old.vBuf.destroy();
       old.iBuf.destroy();
-      old.tex?.destroy();
-      this.meshes[ex] = { name: mesh.name, vBuf, iBuf, iCount: idx.length, model, texBg, tex };
+      old.tex?.destroy(); // Only destroys non-cached textures
+      this.meshes[ex] = {
+        name: mesh.name,
+        vBuf,
+        iBuf,
+        iCount: idx.length,
+        model,
+        texBg,
+        tex: isCachedTex ? undefined : tex,
+      };
     } else {
-      this.meshes.push({ name: mesh.name, vBuf, iBuf, iCount: idx.length, model, texBg, tex });
+      this.meshes.push({
+        name: mesh.name,
+        vBuf,
+        iBuf,
+        iCount: idx.length,
+        model,
+        texBg,
+        tex: isCachedTex ? undefined : tex,
+      });
     }
     const hasTex = tex ? " [textured]" : "";
     console.log(
@@ -423,6 +497,9 @@ export class DarkIronRenderer {
       m.tex?.destroy();
     }
     this.meshes = [];
+    // Destroy cached textures
+    for (const tex of this.texCache.values()) tex.destroy();
+    this.texCache.clear();
   }
 
   render(): void {

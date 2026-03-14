@@ -25,13 +25,23 @@ table Transform {
   matrix: [float]; // 16 elements, column-major
 }
 
+/// PBR material data — texture paths fetched by browser via HTTP
+table MaterialData {
+  name: string;              // Material name (e.g., "M_King_B")
+  base_color_path: string;   // Relative path to base color texture
+  normal_path: string;       // Relative path to normal map
+  roughness_path: string;    // Relative path to roughness texture
+  metallic_path: string;     // Relative path to metallic texture
+}
+
 /// Mesh geometry data ready for GPU upload
 table MeshData {
   name: string;
   vertices: [float];   // Interleaved: pos(3) + normal(3) + color(3) per vertex
-  indices: [uint32];   // Changed from uint16
-  uvs: [float];        // Texture coordinates: u,v pairs (2 floats per vertex) — meshes can exceed 65K vertices
-  base_color_tex: [ubyte]; // Raw image bytes (JPEG/PNG) for base color texture
+  indices: [uint32];
+  uvs: [float];        // Texture coordinates: u,v pairs (2 floats per vertex)
+  base_color_tex: [ubyte]; // DEPRECATED: raw image bytes — use material paths instead
+  material: MaterialData;  // PBR material with texture paths (preferred)
 }
 
 /// Published when a scene is fully loaded and ready for rendering
