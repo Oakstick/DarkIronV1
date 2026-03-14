@@ -66,7 +66,10 @@ pub fn build_cube_scene(session_id: &str) -> Vec<u8> {
         indices.extend_from_slice(&[vi, vi + 1, vi + 2, vi, vi + 2, vi + 3]);
         vi += 4;
     }
-    meshes_to_flatbuffers(session_id, &[("default_cube", &vertices, &indices, &[], &[])])
+    meshes_to_flatbuffers(
+        session_id,
+        &[("default_cube", &vertices, &indices, &[], &[])],
+    )
 }
 
 /// Mesh data tuple: (name, vertices, indices, uvs, base_color_tex_bytes)
@@ -81,8 +84,16 @@ fn meshes_to_flatbuffers(session_id: &str, meshes: &[MeshTuple<'_>]) -> Vec<u8> 
         let name = builder.create_string(name_str);
         let verts_vec = builder.create_vector(verts);
         let idx_vec = builder.create_vector(idxs);
-        let uvs_vec = if uvs.is_empty() { None } else { Some(builder.create_vector(uvs)) };
-        let tex_vec = if tex.is_empty() { None } else { Some(builder.create_vector(tex)) };
+        let uvs_vec = if uvs.is_empty() {
+            None
+        } else {
+            Some(builder.create_vector(uvs))
+        };
+        let tex_vec = if tex.is_empty() {
+            None
+        } else {
+            Some(builder.create_vector(tex))
+        };
         let mesh = fb::MeshData::create(
             &mut builder,
             &fb::MeshDataArgs {
@@ -129,7 +140,15 @@ pub fn load_usd_file(path: &Path, session_id: &str) -> Result<Vec<Vec<u8>>> {
     for chunk in extracted.chunks(1) {
         let mesh_data: Vec<MeshTuple<'_>> = chunk
             .iter()
-            .map(|m| (m.name.as_str(), m.vertices.as_slice(), m.indices.as_slice(), m.uvs.as_slice(), m.base_color_tex.as_slice()))
+            .map(|m| {
+                (
+                    m.name.as_str(),
+                    m.vertices.as_slice(),
+                    m.indices.as_slice(),
+                    m.uvs.as_slice(),
+                    m.base_color_tex.as_slice(),
+                )
+            })
             .collect();
         payloads.push(meshes_to_flatbuffers(session_id, &mesh_data));
     }
@@ -257,10 +276,7 @@ fn collect_scene_files(root: &Path, max_depth: usize) -> Vec<std::path::PathBuf>
 
         for entry in entries.flatten() {
             // Skip symlinks to avoid cycles and unexpected traversal outside assets_dir.
-            let is_symlink = entry
-                .file_type()
-                .map(|ft| ft.is_symlink())
-                .unwrap_or(false);
+            let is_symlink = entry.file_type().map(|ft| ft.is_symlink()).unwrap_or(false);
             if is_symlink {
                 debug!(path = %entry.path().display(), "Skipping symlink");
                 continue;
