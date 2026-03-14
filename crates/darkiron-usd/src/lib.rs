@@ -508,26 +508,32 @@ fn find_texture_path(
     color: &str,
     channel: &str,
 ) -> Option<String> {
-    let tex_dir = assets_dir.join(format!("OpenChessSet/assets/{piece}/tex"));
-
-    // Try color-specific first
+    // Candidate texture names in priority order
+    let mut candidates = Vec::new();
     if !color.is_empty() {
-        let name = format!("{piece_lower}_{color}_{channel}.jpg");
-        if tex_dir.join(&name).exists() {
-            return Some(format!("OpenChessSet/assets/{piece}/tex/{name}"));
+        candidates.push(format!("{piece_lower}_{color}_{channel}.jpg"));
+    }
+    candidates.push(format!("{piece_lower}_shared_{channel}.jpg"));
+    candidates.push(format!("{piece_lower}_{channel}.jpg"));
+
+    let rel_path = format!("OpenChessSet/assets/{piece}/tex");
+
+    // Search multiple possible locations depending on how usd_dir relates to the asset tree:
+    // 1. assets_dir = "assets/" (top-level) → look in "assets/OpenChessSet/assets/{Piece}/tex/"
+    // 2. assets_dir = "assets/OpenChessSet/" (combined .usdc) → look in "assets/OpenChessSet/assets/{Piece}/tex/"
+    // 3. assets_dir = "assets/OpenChessSet/assets/{Piece}/" (individual .usd) → look in "tex/"
+    let search_dirs = [
+        assets_dir.join(format!("OpenChessSet/assets/{piece}/tex")),
+        assets_dir.join(format!("assets/{piece}/tex")),
+        assets_dir.join("tex"),
+    ];
+
+    for name in &candidates {
+        for dir in &search_dirs {
+            if dir.join(name).exists() {
+                return Some(format!("{rel_path}/{name}"));
+            }
         }
-    }
-
-    // Try shared variant
-    let shared = format!("{piece_lower}_shared_{channel}.jpg");
-    if tex_dir.join(&shared).exists() {
-        return Some(format!("OpenChessSet/assets/{piece}/tex/{shared}"));
-    }
-
-    // Try bare (no color, no shared — e.g., chessboard_normal.jpg)
-    let bare = format!("{piece_lower}_{channel}.jpg");
-    if tex_dir.join(&bare).exists() {
-        return Some(format!("OpenChessSet/assets/{piece}/tex/{bare}"));
     }
 
     None
@@ -537,8 +543,15 @@ fn find_texture_path(
 ///
 /// Returns `MaterialInfo` with relative paths (from assets root) for each PBR channel.
 /// The browser prefixes these with `/textures/` to fetch via HTTP.
-fn resolve_material_paths(mesh_name: &str, assets_dir: &Path) -> Option<MaterialInfo> {
-    let (piece, color) = derive_piece_and_variant(mesh_name)?;
+/// `usd_path_hint` is the USD file path — used as fallback when mesh name lacks piece info.
+fn resolve_material_paths(
+    mesh_name: &str,
+    assets_dir: &Path,
+    usd_path_hint: Option<&str>,
+) -> Option<MaterialInfo> {
+    // Try mesh name first, fall back to USD file path for piece/color identification
+    let (piece, color) = derive_piece_and_variant(mesh_name)
+        .or_else(|| usd_path_hint.and_then(derive_piece_and_variant))?;
     let piece_lower = piece.to_lowercase();
 
     let mat_name = if color.is_empty() {
@@ -709,7 +722,8 @@ fn extract_mesh_with_transform(
     }
 
     // Resolve PBR material texture paths (preferred — lightweight, browser fetches via HTTP)
-    let material = resolve_material_paths(&name, usd_dir);
+    // Pass the USD prim path as fallback hint for piece/color identification
+    let material = resolve_material_paths(&name, usd_dir, Some(path));
 
     // Only fall back to raw bytes if no material paths resolved
     let base_color_tex = if material.is_some() {
