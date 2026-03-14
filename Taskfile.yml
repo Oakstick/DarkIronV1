@@ -58,12 +58,11 @@ tasks:
 
   runtime:
     desc: Build and run the native runtime
-    dir: crates/darkiron-runtime
     env:
       NATS_URL: "{{.NATS_URL}}"
       RUST_LOG: "info,darkiron=debug"
     cmds:
-      - cargo run
+      - cargo run -p darkiron-runtime
 
   runtime:build:
     desc: Build runtime (debug)

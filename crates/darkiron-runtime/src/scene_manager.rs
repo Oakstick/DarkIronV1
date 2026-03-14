@@ -6,7 +6,7 @@
 use anyhow::Result;
 use darkiron_transport::DarkIronTransport;
 use std::path::Path;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 // Include the generated FlatBuffers code
 #[path = "../../../schemas/generated/rust/scene_generated.rs"]
@@ -221,33 +221,95 @@ pub async fn publish_scene(
     Ok(())
 }
 
-/// Check if a file extension is a supported USD format.
-fn is_usd_file(path: &Path) -> bool {
+/// Check if a file extension is a supported scene format (USD binary + JSON).
+/// Note: `.usda` (ASCII) is excluded — the openusd crate does not yet support
+/// parsing prim properties in text format, and attempting it causes a panic.
+fn is_scene_file(path: &Path) -> bool {
     path.extension()
-        .map(|e| matches!(e.to_str(), Some("usdc" | "usda" | "usd")))
-        .unwrap_or(false)
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| matches!(ext, "usdc" | "usd" | "json"))
 }
 
-/// Scan assets directory for scene files (JSON + USD), publish via NATS.
+/// Check if a file extension is a supported USD format (binary only).
+fn is_usd_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| matches!(ext, "usdc" | "usd"))
+}
+
+/// Recursively collect all scene files (USD + JSON) under a directory.
+///
+/// Uses an iterative stack to avoid deep recursion. Caps traversal at
+/// `max_depth` levels to guard against symlink loops or adversarial trees.
+/// O(n) in total filesystem entries; allocates one Vec for the result.
+fn collect_scene_files(root: &Path, max_depth: usize) -> Vec<std::path::PathBuf> {
+    let mut result = Vec::new();
+    let mut stack: Vec<(std::path::PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
+
+    while let Some((dir, depth)) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(e) => {
+                warn!(path = %dir.display(), error = %e, "Cannot read directory");
+                continue;
+            }
+        };
+
+        for entry in entries.flatten() {
+            // Skip symlinks to avoid cycles and unexpected traversal outside assets_dir.
+            let is_symlink = entry
+                .file_type()
+                .map(|ft| ft.is_symlink())
+                .unwrap_or(false);
+            if is_symlink {
+                debug!(path = %entry.path().display(), "Skipping symlink");
+                continue;
+            }
+
+            let path = entry.path();
+            if path.is_dir() {
+                if depth < max_depth {
+                    stack.push((path, depth + 1));
+                }
+            } else if is_scene_file(&path) {
+                result.push(path);
+            }
+        }
+    }
+
+    // Sort for deterministic load order (alphabetical by full path).
+    result.sort();
+    result
+}
+
+/// Scan assets directory tree for scene files (JSON + USD), publish via NATS.
+///
+/// Recurses up to 4 levels deep so nested asset packs like
+/// `assets/OpenChessSet/chess_set.usdc` are discovered automatically.
 pub async fn load_and_publish_assets(
     transport: &DarkIronTransport,
     assets_dir: &Path,
     session_id: &str,
 ) -> bool {
+    let files = collect_scene_files(assets_dir, 4);
+    if files.is_empty() {
+        info!(dir = %assets_dir.display(), "No scene files found");
+        return false;
+    }
+
+    info!(dir = %assets_dir.display(), count = files.len(), "Discovered scene files");
+
     let mut any_loaded = false;
+    let subject = format!("scene.{session_id}.loaded");
 
-    let entries = match std::fs::read_dir(assets_dir) {
-        Ok(e) => e,
-        Err(_) => return false,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let subject = format!("scene.{session_id}.loaded");
-
-        if is_usd_file(&path) {
-            match load_usd_file(&path, session_id) {
-                Ok(payloads) => {
+    for path in &files {
+        if is_usd_file(path) {
+            // Guard against panics in the USD parser (e.g. unimplemented features).
+            let path_clone = path.clone();
+            let sid = session_id.to_string();
+            let result = std::panic::catch_unwind(|| load_usd_file(&path_clone, &sid));
+            match result {
+                Ok(Ok(payloads)) => {
                     for payload in &payloads {
                         if let Err(e) = publish_scene(transport, &subject, payload).await {
                             error!(file = %path.display(), error = %e, "Failed to publish USD batch");
@@ -256,10 +318,11 @@ pub async fn load_and_publish_assets(
                     info!(file = %path.display(), batches = payloads.len(), "Published USD scene");
                     any_loaded = true;
                 }
-                Err(e) => warn!(file = %path.display(), error = %e, "Failed to load USD"),
+                Ok(Err(e)) => warn!(file = %path.display(), error = %e, "Failed to load USD"),
+                Err(_) => error!(file = %path.display(), "USD parser panicked — skipping file"),
             }
         } else if path.extension().is_some_and(|e| e == "json") {
-            match load_scene_file(&path, session_id) {
+            match load_scene_file(path, session_id) {
                 Ok(payload) => match publish_scene(transport, &subject, &payload).await {
                     Ok(()) => {
                         info!(file = %path.display(), bytes = payload.len(), "Published JSON scene");
