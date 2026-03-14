@@ -68,19 +68,26 @@ pub fn build_cube_scene(session_id: &str) -> Vec<u8> {
     }
     meshes_to_flatbuffers(
         session_id,
-        &[("default_cube", &vertices, &indices, &[], &[])],
+        &[("default_cube", &vertices, &indices, &[], &[], None)],
     )
 }
 
-/// Mesh data tuple: (name, vertices, indices, uvs, base_color_tex_bytes)
-type MeshTuple<'a> = (&'a str, &'a [f32], &'a [u32], &'a [f32], &'a [u8]);
+/// Mesh data tuple: (name, vertices, indices, uvs, base_color_tex_bytes, material)
+type MeshTuple<'a> = (
+    &'a str,
+    &'a [f32],
+    &'a [u32],
+    &'a [f32],
+    &'a [u8],
+    Option<&'a darkiron_usd::MaterialInfo>,
+);
 
 /// Convert a list of meshes to FlatBuffers SceneEvent bytes.
 fn meshes_to_flatbuffers(session_id: &str, meshes: &[MeshTuple<'_>]) -> Vec<u8> {
     let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024 * 1024);
     let mut mesh_offsets = Vec::new();
 
-    for &(name_str, verts, idxs, uvs, tex) in meshes {
+    for &(name_str, verts, idxs, uvs, tex, mat) in meshes {
         let name = builder.create_string(name_str);
         let verts_vec = builder.create_vector(verts);
         let idx_vec = builder.create_vector(idxs);
@@ -94,6 +101,29 @@ fn meshes_to_flatbuffers(session_id: &str, meshes: &[MeshTuple<'_>]) -> Vec<u8> 
         } else {
             Some(builder.create_vector(tex))
         };
+
+        // Build MaterialData if material info is present
+        let material = mat.map(|m| {
+            let mat_name = builder.create_string(&m.name);
+            let bc = m
+                .base_color_tex
+                .as_deref()
+                .map(|s| builder.create_string(s));
+            let nm = m.normal_tex.as_deref().map(|s| builder.create_string(s));
+            let rg = m.roughness_tex.as_deref().map(|s| builder.create_string(s));
+            let mt = m.metallic_tex.as_deref().map(|s| builder.create_string(s));
+            fb::MaterialData::create(
+                &mut builder,
+                &fb::MaterialDataArgs {
+                    name: Some(mat_name),
+                    base_color_path: bc,
+                    normal_path: nm,
+                    roughness_path: rg,
+                    metallic_path: mt,
+                },
+            )
+        });
+
         let mesh = fb::MeshData::create(
             &mut builder,
             &fb::MeshDataArgs {
@@ -102,6 +132,7 @@ fn meshes_to_flatbuffers(session_id: &str, meshes: &[MeshTuple<'_>]) -> Vec<u8> 
                 indices: Some(idx_vec),
                 uvs: uvs_vec,
                 base_color_tex: tex_vec,
+                material,
             },
         );
         mesh_offsets.push(mesh);
@@ -147,6 +178,7 @@ pub fn load_usd_file(path: &Path, session_id: &str) -> Result<Vec<Vec<u8>>> {
                     m.indices.as_slice(),
                     m.uvs.as_slice(),
                     m.base_color_tex.as_slice(),
+                    m.material.as_ref(),
                 )
             })
             .collect();
@@ -202,6 +234,7 @@ pub fn load_scene_file(path: &Path, session_id: &str) -> Result<Vec<u8>> {
                 indices: Some(idx_vec),
                 uvs: None,
                 base_color_tex: None,
+                material: None,
             },
         );
         mesh_offsets.push(mesh);

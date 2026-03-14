@@ -14,16 +14,32 @@ use std::path::Path;
 
 use tracing::{debug, info, warn};
 
+/// PBR material info: texture paths relative to the assets root.
+#[derive(Debug, Clone, Default)]
+pub struct MaterialInfo {
+    /// Material name (e.g., "King_black")
+    pub name: String,
+    /// Piece type (e.g., "King", "Chessboard")
+    pub piece: String,
+    /// Relative path to base color texture
+    pub base_color_tex: Option<String>,
+    /// Relative path to normal map texture
+    pub normal_tex: Option<String>,
+    /// Relative path to roughness texture
+    pub roughness_tex: Option<String>,
+    /// Relative path to metallic texture
+    pub metallic_tex: Option<String>,
+}
+
 /// A mesh extracted from a USD stage.
-
 #[derive(Debug, Clone)]
-
 pub struct ExtractedMesh {
     pub name: String,
     pub vertices: Vec<f32>,
     pub indices: Vec<u32>,
     pub uvs: Vec<f32>,
     pub base_color_tex: Vec<u8>,
+    pub material: Option<MaterialInfo>,
 }
 
 fn color_for_path(path: &str) -> [f32; 3] {
@@ -441,6 +457,124 @@ fn find_texture_by_convention(mesh_name: &str, usd_dir: &Path) -> Option<Vec<u8>
     None
 }
 
+/// Derive piece type and color variant from a mesh name.
+///
+/// Names like "Black_King_Body_mesh" → ("King", "black")
+/// Names like "White_Pawn0_Pawn_Body_mesh" → ("Pawn", "white")
+/// Names like "Chessboard_Chessboard_mesh" → ("Chessboard", "")
+fn derive_piece_and_variant(mesh_name: &str) -> Option<(String, String)> {
+    let name_lower = mesh_name.to_lowercase();
+    let pieces = [
+        "king",
+        "queen",
+        "bishop",
+        "knight",
+        "rook",
+        "pawn",
+        "chessboard",
+    ];
+    let piece = pieces.iter().find(|p| name_lower.contains(*p))?;
+
+    let color = if name_lower.contains("black") {
+        "black"
+    } else if name_lower.contains("white") {
+        "white"
+    } else if *piece == "chessboard" {
+        ""
+    } else {
+        return None;
+    };
+
+    // Capitalize piece for directory name
+    let piece_cap = {
+        let mut c = piece.chars();
+        match c.next() {
+            None => return None,
+            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        }
+    };
+
+    Some((piece_cap, color.to_string()))
+}
+
+/// Try to find a texture file, falling back to shared variant.
+///
+/// Checks `{piece}_{color}_{channel}.jpg` first, then `{piece}_shared_{channel}.jpg`,
+/// then `{piece}_{channel}.jpg` (for chessboard).
+fn find_texture_path(
+    assets_dir: &Path,
+    piece: &str,
+    piece_lower: &str,
+    color: &str,
+    channel: &str,
+) -> Option<String> {
+    let tex_dir = assets_dir.join(format!("OpenChessSet/assets/{piece}/tex"));
+
+    // Try color-specific first
+    if !color.is_empty() {
+        let name = format!("{piece_lower}_{color}_{channel}.jpg");
+        if tex_dir.join(&name).exists() {
+            return Some(format!("OpenChessSet/assets/{piece}/tex/{name}"));
+        }
+    }
+
+    // Try shared variant
+    let shared = format!("{piece_lower}_shared_{channel}.jpg");
+    if tex_dir.join(&shared).exists() {
+        return Some(format!("OpenChessSet/assets/{piece}/tex/{shared}"));
+    }
+
+    // Try bare (no color, no shared — e.g., chessboard_normal.jpg)
+    let bare = format!("{piece_lower}_{channel}.jpg");
+    if tex_dir.join(&bare).exists() {
+        return Some(format!("OpenChessSet/assets/{piece}/tex/{bare}"));
+    }
+
+    None
+}
+
+/// Resolve PBR material texture paths for a mesh by naming convention.
+///
+/// Returns `MaterialInfo` with relative paths (from assets root) for each PBR channel.
+/// The browser prefixes these with `/textures/` to fetch via HTTP.
+fn resolve_material_paths(mesh_name: &str, assets_dir: &Path) -> Option<MaterialInfo> {
+    let (piece, color) = derive_piece_and_variant(mesh_name)?;
+    let piece_lower = piece.to_lowercase();
+
+    let mat_name = if color.is_empty() {
+        piece.clone()
+    } else {
+        format!("{piece}_{color}")
+    };
+
+    let base_color = find_texture_path(assets_dir, &piece, &piece_lower, &color, "base_color");
+    let normal = find_texture_path(assets_dir, &piece, &piece_lower, &color, "normal");
+    let roughness = find_texture_path(assets_dir, &piece, &piece_lower, &color, "roughness");
+    let metallic = find_texture_path(assets_dir, &piece, &piece_lower, &color, "metallic");
+
+    if base_color.is_none() {
+        debug!(mesh = %mesh_name, "No base_color texture path found");
+        return None;
+    }
+
+    debug!(
+        mesh = %mesh_name,
+        material = %mat_name,
+        base_color = ?base_color,
+        normal = ?normal,
+        "Resolved material paths"
+    );
+
+    Some(MaterialInfo {
+        name: mat_name,
+        piece,
+        base_color_tex: base_color,
+        normal_tex: normal,
+        roughness_tex: roughness,
+        metallic_tex: metallic,
+    })
+}
+
 /// Extract mesh geometry from a prim path with an optional additional transform.
 fn extract_mesh_with_transform(
     reader: &mut dyn AbstractData,
@@ -574,19 +708,28 @@ fn extract_mesh_with_transform(
         return None;
     }
 
-    // Resolve base_color texture: try material:binding first, then convention fallback
-    let base_color_tex = resolve_material_texture(reader, path, usd_dir)
-        .or_else(|| find_texture_by_convention(&name, usd_dir));
+    // Resolve PBR material texture paths (preferred — lightweight, browser fetches via HTTP)
+    let material = resolve_material_paths(&name, usd_dir);
+
+    // Only fall back to raw bytes if no material paths resolved
+    let base_color_tex = if material.is_some() {
+        Vec::new() // Don't send bytes when paths are available
+    } else {
+        resolve_material_texture(reader, path, usd_dir)
+            .or_else(|| find_texture_by_convention(&name, usd_dir))
+            .unwrap_or_default()
+    };
 
     debug!(name = %name, tris = indices.len() / 3,
-           has_texture = base_color_tex.is_some(), "Extracted mesh");
+           has_material = material.is_some(), "Extracted mesh");
 
     Some(ExtractedMesh {
         name,
         vertices,
         indices,
         uvs,
-        base_color_tex: base_color_tex.unwrap_or_default(),
+        base_color_tex,
+        material,
     })
 }
 

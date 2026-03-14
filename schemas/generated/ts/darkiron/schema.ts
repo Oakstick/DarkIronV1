@@ -4,6 +4,7 @@
 
 export { AssetCooked } from './schema/asset-cooked.js';
 export { Color } from './schema/color.js';
+export { MaterialData } from './schema/material-data.js';
 export { MeshData } from './schema/mesh-data.js';
 export { PrimCreated } from './schema/prim-created.js';
 export { PrimDeleted } from './schema/prim-deleted.js';
