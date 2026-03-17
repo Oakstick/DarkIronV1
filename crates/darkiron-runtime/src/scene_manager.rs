@@ -273,20 +273,21 @@ pub async fn publish_scene(
     Ok(())
 }
 
-/// Check if a file extension is a supported scene format (USD binary + JSON).
-/// Note: `.usda` (ASCII) is excluded — the openusd crate does not yet support
-/// parsing prim properties in text format, and attempting it causes a panic.
+/// Check if a file extension is a supported scene format (USDC binary + JSON).
+/// Only `.usdc` is accepted for USD — `.usd` files are typically layer references
+/// (e.g., Bishop.usd, Bishop_geom.usd) that can't be loaded standalone without
+/// USD composition. The runtime loads pre-flattened `.usdc` files only.
 fn is_scene_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|ext| matches!(ext, "usdc" | "usd" | "json"))
+        .is_some_and(|ext| matches!(ext, "usdc" | "json"))
 }
 
 /// Check if a file extension is a supported USD format (binary only).
 fn is_usd_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|ext| matches!(ext, "usdc" | "usd"))
+        .is_some_and(|ext| ext == "usdc")
 }
 
 /// Recursively collect all scene files (USD + JSON) under a directory.
@@ -346,7 +347,22 @@ pub async fn load_and_publish_assets(
         return false;
     }
 
-    info!(dir = %assets_dir.display(), count = files.len(), "Discovered scene files");
+    // Deduplicate by filename — the same scene file may appear at multiple depths
+    // (e.g., assets/chess_set_flat.usdc and assets/OpenChessSet/chess_set_flat.usdc).
+    let mut seen_names = std::collections::HashSet::new();
+    let files: Vec<_> = files
+        .into_iter()
+        .filter(|p| {
+            let name = p
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            seen_names.insert(name)
+        })
+        .collect();
+
+    info!(dir = %assets_dir.display(), count = files.len(), "Discovered scene files (deduplicated)");
 
     let mut any_loaded = false;
     let subject = format!("scene.{session_id}.loaded");
