@@ -14,16 +14,26 @@ use std::path::Path;
 
 use tracing::{debug, info, warn};
 
-/// A mesh extracted from a USD stage.
-
+/// PBR material info with relative texture paths.
+/// Paths are relative to the texture serving root (e.g., "OpenChessSet/King/King_black_base_color.jpg").
 #[derive(Debug, Clone)]
+pub struct MaterialInfo {
+    pub name: String,
+    pub base_color_tex: Option<String>,
+    pub normal_tex: Option<String>,
+    pub roughness_tex: Option<String>,
+    pub metallic_tex: Option<String>,
+}
 
+/// A mesh extracted from a USD stage.
+#[derive(Debug, Clone)]
 pub struct ExtractedMesh {
     pub name: String,
     pub vertices: Vec<f32>,
     pub indices: Vec<u32>,
     pub uvs: Vec<f32>,
     pub base_color_tex: Vec<u8>,
+    pub material: Option<MaterialInfo>,
 }
 
 fn color_for_path(path: &str) -> [f32; 3] {
@@ -375,6 +385,146 @@ fn find_texture_in_material(
     None
 }
 
+/// Try to resolve a base_color texture path from the USD material network (returns relative path, not bytes).
+fn resolve_material_texture_path(
+    reader: &mut dyn AbstractData,
+    mesh_path: &str,
+    usd_dir: &Path,
+) -> Option<String> {
+    let binding_path = sdf::Path::new(&format!("{mesh_path}.material:binding")).ok()?;
+    let val = reader.get(&binding_path, "targetPaths").ok()?;
+    let material_path = match val.into_owned() {
+        sdf::Value::PathListOp(list_op) => list_op
+            .explicit_items
+            .first()
+            .or_else(|| list_op.prepended_items.first())
+            .map(|p| p.to_string()),
+        _ => None,
+    }?;
+
+    let tex_path = find_texture_in_material(reader, &material_path, usd_dir)?;
+    // Convert absolute path to relative path from usd_dir
+    tex_path
+        .strip_prefix(usd_dir)
+        .ok()
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+}
+
+/// Find a texture file path by convention for a given PBR channel.
+/// Returns relative path from `usd_dir` (e.g., "OpenChessSet/assets/King/tex/king_black_base_color.jpg").
+fn find_texture_path(
+    piece: &str,
+    color: &str,
+    channel: &str,
+    piece_cap: &str,
+    usd_dir: &Path,
+) -> Option<String> {
+    let tex_name = if color.is_empty() {
+        format!("{piece}_{channel}.jpg")
+    } else {
+        format!("{piece}_{color}_{channel}.jpg")
+    };
+
+    // Fallback chain: piece_color_channel → piece_shared_channel → piece_channel
+    let candidates = if color.is_empty() {
+        vec![tex_name.clone()]
+    } else {
+        vec![
+            tex_name.clone(),
+            format!("{piece}_shared_{channel}.jpg"),
+            format!("{piece}_{channel}.jpg"),
+        ]
+    };
+
+    let search_dirs = [
+        usd_dir.join(format!("OpenChessSet/assets/{piece_cap}/tex")),
+        usd_dir.join("tex"),
+        usd_dir.to_path_buf(),
+    ];
+
+    for candidate in &candidates {
+        for dir in &search_dirs {
+            let path = dir.join(candidate);
+            if path.exists() {
+                if let Ok(rel) = path.strip_prefix(usd_dir) {
+                    return Some(rel.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Resolve all PBR material texture paths by naming convention.
+/// Returns `MaterialInfo` with relative paths for each channel found.
+fn resolve_material_paths(mesh_name: &str, usd_dir: &Path) -> Option<MaterialInfo> {
+    let name_lower = mesh_name.to_lowercase();
+
+    let pieces = [
+        "king",
+        "queen",
+        "bishop",
+        "knight",
+        "rook",
+        "pawn",
+        "chessboard",
+    ];
+    let piece = pieces.iter().find(|p| name_lower.contains(*p))?;
+
+    let color = if name_lower.contains("black") {
+        "black"
+    } else if name_lower.contains("white") {
+        "white"
+    } else if *piece == "chessboard" {
+        ""
+    } else {
+        return None;
+    };
+
+    let piece_cap = {
+        let mut c = piece.chars();
+        match c.next() {
+            None => String::new(),
+            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        }
+    };
+
+    let base_color = find_texture_path(piece, color, "base_color", &piece_cap, usd_dir);
+    let normal = find_texture_path(piece, color, "normal", &piece_cap, usd_dir);
+    let roughness = find_texture_path(piece, color, "roughness", &piece_cap, usd_dir);
+    let metallic = find_texture_path(piece, color, "metallic", &piece_cap, usd_dir);
+
+    // Only return MaterialInfo if at least base_color is found
+    if base_color.is_none() {
+        debug!(mesh = %mesh_name, "No base_color texture path found by convention");
+        return None;
+    }
+
+    let mat_name = if color.is_empty() {
+        format!("M_{piece_cap}")
+    } else {
+        let color_cap = {
+            let mut c = color.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        };
+        format!("M_{piece_cap}_{color_cap}")
+    };
+
+    info!(mesh = %mesh_name, base_color = ?base_color, normal = ?normal,
+          roughness = ?roughness, metallic = ?metallic, "Resolved material paths");
+
+    Some(MaterialInfo {
+        name: mat_name,
+        base_color_tex: base_color,
+        normal_tex: normal,
+        roughness_tex: roughness,
+        metallic_tex: metallic,
+    })
+}
+
 /// Convention-based fallback: find base_color texture by scanning known directories.
 fn find_texture_by_convention(mesh_name: &str, usd_dir: &Path) -> Option<Vec<u8>> {
     // Determine piece type and color from mesh name
@@ -574,19 +724,46 @@ fn extract_mesh_with_transform(
         return None;
     }
 
-    // Resolve base_color texture: try material:binding first, then convention fallback
-    let base_color_tex = resolve_material_texture(reader, path, usd_dir)
-        .or_else(|| find_texture_by_convention(&name, usd_dir));
+    // Resolve material paths (preferred: lightweight string paths over wire)
+    let mut material = resolve_material_paths(&name, usd_dir);
+
+    // If convention-based path resolution didn't find base_color, try USD material network
+    if material.is_none() {
+        if let Some(bc_path) = resolve_material_texture_path(reader, path, usd_dir) {
+            material = Some(MaterialInfo {
+                name: format!("M_{}", name.replace(' ', "_")),
+                base_color_tex: Some(bc_path),
+                normal_tex: None,
+                roughness_tex: None,
+                metallic_tex: None,
+            });
+        }
+    }
+
+    // Fallback: read raw bytes for backward compat (only if no material paths)
+    let base_color_tex = if material
+        .as_ref()
+        .and_then(|m| m.base_color_tex.as_ref())
+        .is_some()
+    {
+        Vec::new() // Path takes priority — don't send bytes
+    } else {
+        resolve_material_texture(reader, path, usd_dir)
+            .or_else(|| find_texture_by_convention(&name, usd_dir))
+            .unwrap_or_default()
+    };
 
     debug!(name = %name, tris = indices.len() / 3,
-           has_texture = base_color_tex.is_some(), "Extracted mesh");
+           has_material = material.is_some(),
+           has_tex_bytes = !base_color_tex.is_empty(), "Extracted mesh");
 
     Some(ExtractedMesh {
         name,
         vertices,
         indices,
         uvs,
-        base_color_tex: base_color_tex.unwrap_or_default(),
+        base_color_tex,
+        material,
     })
 }
 
@@ -839,7 +1016,8 @@ pub fn load_stage(path: &Path) -> Result<Vec<ExtractedMesh>> {
     for mp in &mesh_paths {
         if let Some(mesh) = extract_mesh(reader.as_mut(), mp, usd_dir) {
             info!(name = %mesh.name, tris = mesh.indices.len() / 3,
-                  tex_bytes = mesh.base_color_tex.len(), "Loaded mesh");
+                  tex_bytes = mesh.base_color_tex.len(),
+                  has_material = mesh.material.is_some(), "Loaded mesh");
 
             meshes.push(mesh);
         } else {

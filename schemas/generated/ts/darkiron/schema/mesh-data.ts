@@ -4,6 +4,9 @@
 
 import * as flatbuffers from 'flatbuffers';
 
+import { MaterialData } from '../../darkiron/schema/material-data.js';
+
+
 /**
  * Mesh geometry data ready for GPU upload
  */
@@ -92,8 +95,13 @@ baseColorTexArray():Uint8Array|null {
   return offset ? new Uint8Array(this.bb!.bytes().buffer, this.bb!.bytes().byteOffset + this.bb!.__vector(this.bb_pos + offset), this.bb!.__vector_len(this.bb_pos + offset)) : null;
 }
 
+material(obj?:MaterialData):MaterialData|null {
+  const offset = this.bb!.__offset(this.bb_pos, 14);
+  return offset ? (obj || new MaterialData()).__init(this.bb!.__indirect(this.bb_pos + offset), this.bb!) : null;
+}
+
 static startMeshData(builder:flatbuffers.Builder) {
-  builder.startObject(5);
+  builder.startObject(6);
 }
 
 static addName(builder:flatbuffers.Builder, nameOffset:flatbuffers.Offset) {
@@ -179,18 +187,13 @@ static startBaseColorTexVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(1, numElems, 1);
 }
 
+static addMaterial(builder:flatbuffers.Builder, materialOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(5, materialOffset, 0);
+}
+
 static endMeshData(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createMeshData(builder:flatbuffers.Builder, nameOffset:flatbuffers.Offset, verticesOffset:flatbuffers.Offset, indicesOffset:flatbuffers.Offset, uvsOffset:flatbuffers.Offset, baseColorTexOffset:flatbuffers.Offset):flatbuffers.Offset {
-  MeshData.startMeshData(builder);
-  MeshData.addName(builder, nameOffset);
-  MeshData.addVertices(builder, verticesOffset);
-  MeshData.addIndices(builder, indicesOffset);
-  MeshData.addUvs(builder, uvsOffset);
-  MeshData.addBaseColorTex(builder, baseColorTexOffset);
-  return MeshData.endMeshData(builder);
-}
 }

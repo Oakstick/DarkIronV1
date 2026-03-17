@@ -9,6 +9,7 @@
 import * as flatbuffers from "flatbuffers";
 import { type NatsConnection, type Subscription, connect } from "nats.ws";
 import { AssetCooked } from "../../../schemas/generated/ts/darkiron/schema/asset-cooked";
+import { MaterialData } from "../../../schemas/generated/ts/darkiron/schema/material-data";
 import { PrimCreated } from "../../../schemas/generated/ts/darkiron/schema/prim-created";
 import { PrimDeleted } from "../../../schemas/generated/ts/darkiron/schema/prim-deleted";
 import { SceneEvent } from "../../../schemas/generated/ts/darkiron/schema/scene-event";
@@ -17,6 +18,14 @@ import { SceneLoaded } from "../../../schemas/generated/ts/darkiron/schema/scene
 import { TransformChanged } from "../../../schemas/generated/ts/darkiron/schema/transform-changed";
 
 // ─── Typed event interfaces ─────────────────────────────────
+
+export interface MaterialInfo {
+  name: string | null;
+  baseColorPath: string | null;
+  normalPath: string | null;
+  roughnessPath: string | null;
+  metallicPath: string | null;
+}
 
 export interface SceneLoadedEvent {
   type: "SceneLoaded";
@@ -27,6 +36,7 @@ export interface SceneLoadedEvent {
     indices: number[];
     uvs: number[];
     baseColorTex: Uint8Array | null;
+    material: MaterialInfo | null;
   }>;
 }
 
@@ -86,12 +96,23 @@ function decodeSceneLoaded(event: SceneEvent): SceneLoadedEvent {
     const indicesArr = mesh.indicesArray();
     const uvsArr = mesh.uvsArray();
     const texArr = mesh.baseColorTexArray();
+    const matData = mesh.material(new MaterialData());
+    const material: MaterialInfo | null = matData
+      ? {
+          name: matData.name() ?? null,
+          baseColorPath: matData.baseColorPath() ?? null,
+          normalPath: matData.normalPath() ?? null,
+          roughnessPath: matData.roughnessPath() ?? null,
+          metallicPath: matData.metallicPath() ?? null,
+        }
+      : null;
     meshes.push({
       name: mesh.name() || `mesh_${i}`,
       vertices: verticesArr ? Array.from(verticesArr) : [],
       indices: indicesArr ? Array.from(indicesArr) : [],
       uvs: uvsArr ? Array.from(uvsArr) : [],
       baseColorTex: texArr ?? null,
+      material,
     });
   }
 

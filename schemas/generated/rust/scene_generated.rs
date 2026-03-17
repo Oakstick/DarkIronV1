@@ -599,6 +599,250 @@ pub mod darkiron {
                 ds.finish()
             }
         }
+        pub enum MaterialDataOffset {}
+        #[derive(Copy, Clone, PartialEq)]
+
+        /// PBR material with relative texture paths (preferred over inline bytes)
+        pub struct MaterialData<'a> {
+            pub _tab: flatbuffers::Table<'a>,
+        }
+
+        impl<'a> flatbuffers::Follow<'a> for MaterialData<'a> {
+            type Inner = MaterialData<'a>;
+            #[inline]
+            unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+                Self {
+                    _tab: flatbuffers::Table::new(buf, loc),
+                }
+            }
+        }
+
+        impl<'a> MaterialData<'a> {
+            pub const VT_NAME: flatbuffers::VOffsetT = 4;
+            pub const VT_BASE_COLOR_PATH: flatbuffers::VOffsetT = 6;
+            pub const VT_NORMAL_PATH: flatbuffers::VOffsetT = 8;
+            pub const VT_ROUGHNESS_PATH: flatbuffers::VOffsetT = 10;
+            pub const VT_METALLIC_PATH: flatbuffers::VOffsetT = 12;
+
+            #[inline]
+            pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+                MaterialData { _tab: table }
+            }
+            #[allow(unused_mut)]
+            pub fn create<
+                'bldr: 'args,
+                'args: 'mut_bldr,
+                'mut_bldr,
+                A: flatbuffers::Allocator + 'bldr,
+            >(
+                _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+                args: &'args MaterialDataArgs<'args>,
+            ) -> flatbuffers::WIPOffset<MaterialData<'bldr>> {
+                let mut builder = MaterialDataBuilder::new(_fbb);
+                if let Some(x) = args.metallic_path {
+                    builder.add_metallic_path(x);
+                }
+                if let Some(x) = args.roughness_path {
+                    builder.add_roughness_path(x);
+                }
+                if let Some(x) = args.normal_path {
+                    builder.add_normal_path(x);
+                }
+                if let Some(x) = args.base_color_path {
+                    builder.add_base_color_path(x);
+                }
+                if let Some(x) = args.name {
+                    builder.add_name(x);
+                }
+                builder.finish()
+            }
+
+            #[inline]
+            pub fn name(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab
+                        .get::<flatbuffers::ForwardsUOffset<&str>>(MaterialData::VT_NAME, None)
+                }
+            }
+            #[inline]
+            pub fn base_color_path(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(
+                        MaterialData::VT_BASE_COLOR_PATH,
+                        None,
+                    )
+                }
+            }
+            #[inline]
+            pub fn normal_path(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(
+                        MaterialData::VT_NORMAL_PATH,
+                        None,
+                    )
+                }
+            }
+            #[inline]
+            pub fn roughness_path(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(
+                        MaterialData::VT_ROUGHNESS_PATH,
+                        None,
+                    )
+                }
+            }
+            #[inline]
+            pub fn metallic_path(&self) -> Option<&'a str> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(
+                        MaterialData::VT_METALLIC_PATH,
+                        None,
+                    )
+                }
+            }
+        }
+
+        impl flatbuffers::Verifiable for MaterialData<'_> {
+            #[inline]
+            fn run_verifier(
+                v: &mut flatbuffers::Verifier,
+                pos: usize,
+            ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+                use self::flatbuffers::Verifiable;
+                v.visit_table(pos)?
+                    .visit_field::<flatbuffers::ForwardsUOffset<&str>>(
+                        "name",
+                        Self::VT_NAME,
+                        false,
+                    )?
+                    .visit_field::<flatbuffers::ForwardsUOffset<&str>>(
+                        "base_color_path",
+                        Self::VT_BASE_COLOR_PATH,
+                        false,
+                    )?
+                    .visit_field::<flatbuffers::ForwardsUOffset<&str>>(
+                        "normal_path",
+                        Self::VT_NORMAL_PATH,
+                        false,
+                    )?
+                    .visit_field::<flatbuffers::ForwardsUOffset<&str>>(
+                        "roughness_path",
+                        Self::VT_ROUGHNESS_PATH,
+                        false,
+                    )?
+                    .visit_field::<flatbuffers::ForwardsUOffset<&str>>(
+                        "metallic_path",
+                        Self::VT_METALLIC_PATH,
+                        false,
+                    )?
+                    .finish();
+                Ok(())
+            }
+        }
+        pub struct MaterialDataArgs<'a> {
+            pub name: Option<flatbuffers::WIPOffset<&'a str>>,
+            pub base_color_path: Option<flatbuffers::WIPOffset<&'a str>>,
+            pub normal_path: Option<flatbuffers::WIPOffset<&'a str>>,
+            pub roughness_path: Option<flatbuffers::WIPOffset<&'a str>>,
+            pub metallic_path: Option<flatbuffers::WIPOffset<&'a str>>,
+        }
+        impl<'a> Default for MaterialDataArgs<'a> {
+            #[inline]
+            fn default() -> Self {
+                MaterialDataArgs {
+                    name: None,
+                    base_color_path: None,
+                    normal_path: None,
+                    roughness_path: None,
+                    metallic_path: None,
+                }
+            }
+        }
+
+        pub struct MaterialDataBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+            fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+            start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+        }
+        impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> MaterialDataBuilder<'a, 'b, A> {
+            #[inline]
+            pub fn add_name(&mut self, name: flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_
+                    .push_slot_always::<flatbuffers::WIPOffset<_>>(MaterialData::VT_NAME, name);
+            }
+            #[inline]
+            pub fn add_base_color_path(
+                &mut self,
+                base_color_path: flatbuffers::WIPOffset<&'b str>,
+            ) {
+                self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(
+                    MaterialData::VT_BASE_COLOR_PATH,
+                    base_color_path,
+                );
+            }
+            #[inline]
+            pub fn add_normal_path(&mut self, normal_path: flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(
+                    MaterialData::VT_NORMAL_PATH,
+                    normal_path,
+                );
+            }
+            #[inline]
+            pub fn add_roughness_path(&mut self, roughness_path: flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(
+                    MaterialData::VT_ROUGHNESS_PATH,
+                    roughness_path,
+                );
+            }
+            #[inline]
+            pub fn add_metallic_path(&mut self, metallic_path: flatbuffers::WIPOffset<&'b str>) {
+                self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(
+                    MaterialData::VT_METALLIC_PATH,
+                    metallic_path,
+                );
+            }
+            #[inline]
+            pub fn new(
+                _fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+            ) -> MaterialDataBuilder<'a, 'b, A> {
+                let start = _fbb.start_table();
+                MaterialDataBuilder {
+                    fbb_: _fbb,
+                    start_: start,
+                }
+            }
+            #[inline]
+            pub fn finish(self) -> flatbuffers::WIPOffset<MaterialData<'a>> {
+                let o = self.fbb_.end_table(self.start_);
+                flatbuffers::WIPOffset::new(o.value())
+            }
+        }
+
+        impl core::fmt::Debug for MaterialData<'_> {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                let mut ds = f.debug_struct("MaterialData");
+                ds.field("name", &self.name());
+                ds.field("base_color_path", &self.base_color_path());
+                ds.field("normal_path", &self.normal_path());
+                ds.field("roughness_path", &self.roughness_path());
+                ds.field("metallic_path", &self.metallic_path());
+                ds.finish()
+            }
+        }
         pub enum MeshDataOffset {}
         #[derive(Copy, Clone, PartialEq)]
 
@@ -623,6 +867,7 @@ pub mod darkiron {
             pub const VT_INDICES: flatbuffers::VOffsetT = 8;
             pub const VT_UVS: flatbuffers::VOffsetT = 10;
             pub const VT_BASE_COLOR_TEX: flatbuffers::VOffsetT = 12;
+            pub const VT_MATERIAL: flatbuffers::VOffsetT = 14;
 
             #[inline]
             pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -639,6 +884,9 @@ pub mod darkiron {
                 args: &'args MeshDataArgs<'args>,
             ) -> flatbuffers::WIPOffset<MeshData<'bldr>> {
                 let mut builder = MeshDataBuilder::new(_fbb);
+                if let Some(x) = args.material {
+                    builder.add_material(x);
+                }
                 if let Some(x) = args.base_color_tex {
                     builder.add_base_color_tex(x);
                 }
@@ -719,6 +967,18 @@ pub mod darkiron {
                         )
                 }
             }
+            #[inline]
+            pub fn material(&self) -> Option<MaterialData<'a>> {
+                // Safety:
+                // Created from valid Table for this object
+                // which contains a valid value in this slot
+                unsafe {
+                    self._tab.get::<flatbuffers::ForwardsUOffset<MaterialData>>(
+                        MeshData::VT_MATERIAL,
+                        None,
+                    )
+                }
+            }
         }
 
         impl flatbuffers::Verifiable for MeshData<'_> {
@@ -754,6 +1014,11 @@ pub mod darkiron {
                         Self::VT_BASE_COLOR_TEX,
                         false,
                     )?
+                    .visit_field::<flatbuffers::ForwardsUOffset<MaterialData>>(
+                        "material",
+                        Self::VT_MATERIAL,
+                        false,
+                    )?
                     .finish();
                 Ok(())
             }
@@ -764,6 +1029,7 @@ pub mod darkiron {
             pub indices: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u32>>>,
             pub uvs: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, f32>>>,
             pub base_color_tex: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u8>>>,
+            pub material: Option<flatbuffers::WIPOffset<MaterialData<'a>>>,
         }
         impl<'a> Default for MeshDataArgs<'a> {
             #[inline]
@@ -774,6 +1040,7 @@ pub mod darkiron {
                     indices: None,
                     uvs: None,
                     base_color_tex: None,
+                    material: None,
                 }
             }
         }
@@ -820,6 +1087,14 @@ pub mod darkiron {
                 );
             }
             #[inline]
+            pub fn add_material(&mut self, material: flatbuffers::WIPOffset<MaterialData<'b>>) {
+                self.fbb_
+                    .push_slot_always::<flatbuffers::WIPOffset<MaterialData>>(
+                        MeshData::VT_MATERIAL,
+                        material,
+                    );
+            }
+            #[inline]
             pub fn new(
                 _fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
             ) -> MeshDataBuilder<'a, 'b, A> {
@@ -844,6 +1119,7 @@ pub mod darkiron {
                 ds.field("indices", &self.indices());
                 ds.field("uvs", &self.uvs());
                 ds.field("base_color_tex", &self.base_color_tex());
+                ds.field("material", &self.material());
                 ds.finish()
             }
         }

@@ -196,6 +196,7 @@ export function App() {
                       indices: mesh.indices,
                       uvs: mesh.uvs,
                       baseColorTex: mesh.baseColorTex,
+                      material: mesh.material,
                     })
                     .then(() => {
                       setMsgCount(rendererRef.current?.meshCount ?? 0);
