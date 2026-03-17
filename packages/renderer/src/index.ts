@@ -84,21 +84,62 @@ function genAxis(len: number): { v: Float32Array; n: number } {
   return { v: new Float32Array(d), n: d.length / 6 };
 }
 
-// Mesh shader with UV + texture sampling (group 1 for texture bindings)
+// Mesh shader with PBR textures: base color + normal map (screen-space TBN)
 const MESH_SHADER = `
-struct Uniforms{viewProj:mat4x4f,model:mat4x4f}
-@group(0)@binding(0)var<uniform> u:Uniforms;
-@group(1)@binding(0)var base_tex:texture_2d<f32>;
-@group(1)@binding(1)var base_samp:sampler;
-struct VI{@location(0)p:vec3f,@location(1)n:vec3f,@location(2)c:vec3f,@location(3)uv:vec2f}
-struct VO{@builtin(position)p:vec4f,@location(0)c:vec3f,@location(1)n:vec3f,@location(2)uv:vec2f}
-@vertex fn vs(i:VI)->VO{var o:VO;let wp=u.model*vec4f(i.p,1.0);o.p=u.viewProj*wp;o.c=i.c;
-  o.n=normalize((u.model*vec4f(i.n,0.0)).xyz);o.uv=i.uv;return o;}
-@fragment fn fs(i:VO)->@location(0)vec4f{
-  let tex=textureSample(base_tex,base_samp,i.uv);
-  let ld=normalize(vec3f(0.5,1.0,0.8));
-  let lit=0.3+max(dot(normalize(i.n),ld),0.0)*0.7;
-  return vec4f(tex.rgb*lit,1.0);}`;
+struct Uniforms { viewProj: mat4x4f, model: mat4x4f }
+@group(0) @binding(0) var<uniform> u: Uniforms;
+@group(1) @binding(0) var base_tex: texture_2d<f32>;
+@group(1) @binding(1) var normal_tex: texture_2d<f32>;
+@group(1) @binding(2) var mat_samp: sampler;
+
+struct VI {
+  @location(0) p: vec3f, @location(1) n: vec3f,
+  @location(2) c: vec3f, @location(3) uv: vec2f,
+}
+struct VO {
+  @builtin(position) clip_pos: vec4f,
+  @location(0) color: vec3f,
+  @location(1) world_normal: vec3f,
+  @location(2) uv: vec2f,
+  @location(3) world_pos: vec3f,
+}
+
+@vertex fn vs(i: VI) -> VO {
+  var o: VO;
+  let wp = u.model * vec4f(i.p, 1.0);
+  o.clip_pos = u.viewProj * wp;
+  o.color = i.c;
+  o.world_normal = normalize((u.model * vec4f(i.n, 0.0)).xyz);
+  o.uv = i.uv;
+  o.world_pos = wp.xyz;
+  return o;
+}
+
+@fragment fn fs(i: VO) -> @location(0) vec4f {
+  let base = textureSample(base_tex, mat_samp, i.uv);
+  let n_sample = textureSample(normal_tex, mat_samp, i.uv).xyz;
+
+  // Screen-space TBN: compute tangent frame from position/UV derivatives
+  let n = normalize(i.world_normal);
+  let dp_dx = dpdx(i.world_pos);
+  let dp_dy = dpdy(i.world_pos);
+  let duv_dx = dpdx(i.uv);
+  let duv_dy = dpdy(i.uv);
+  let det = duv_dx.x * duv_dy.y - duv_dx.y * duv_dy.x;
+  let inv_det = select(1.0 / det, 0.0, abs(det) < 1e-6);
+  let t = normalize((dp_dx * duv_dy.y - dp_dy * duv_dx.y) * inv_det);
+  let b = normalize((dp_dy * duv_dx.x - dp_dx * duv_dy.x) * inv_det);
+  let tbn = mat3x3f(t, b, n);
+
+  // Decompress normal map [0,1] -> [-1,1] and apply TBN
+  let n_map = n_sample * 2.0 - 1.0;
+  let perturbed = normalize(tbn * n_map);
+
+  // Lambertian lighting with perturbed normal
+  let ld = normalize(vec3f(0.5, 1.0, 0.8));
+  let lit = 0.3 + max(dot(perturbed, ld), 0.0) * 0.7;
+  return vec4f(base.rgb * lit, 1.0);
+}`;
 
 const LINE_SHADER = `
 struct Uniforms{viewProj:mat4x4f,model:mat4x4f}
@@ -161,6 +202,7 @@ export class DarkIronRenderer {
   private texBgl: GPUBindGroupLayout | null = null;
   private defaultTexBg: GPUBindGroup | null = null;
   private defaultTex: GPUTexture | null = null;
+  private defaultNormalTex: GPUTexture | null = null;
   private sampler: GPUSampler | null = null;
   private meshes: GPUMesh[] = [];
   private texCache: Map<string, GPUTexture> = new Map();
@@ -195,11 +237,12 @@ export class DarkIronRenderer {
       entries: [{ binding: 0, resource: { buffer: this.uBuf } }],
     });
 
-    // Group 1: texture + sampler (per-mesh)
+    // Group 1: base_color + normal_map + sampler (per-mesh)
     this.texBgl = this.dev.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
       ],
     });
 
@@ -212,7 +255,7 @@ export class DarkIronRenderer {
       addressModeV: "repeat",
     });
 
-    // Default 1x1 white texture for meshes without textures
+    // Default 1x1 white texture for meshes without base color
     this.defaultTex = this.dev.createTexture({
       size: [1, 1],
       format: "rgba8unorm",
@@ -224,11 +267,26 @@ export class DarkIronRenderer {
       { bytesPerRow: 4 },
       [1, 1],
     );
+
+    // Default 1x1 flat normal texture (0.5, 0.5, 1.0 = no perturbation in tangent space)
+    this.defaultNormalTex = this.dev.createTexture({
+      size: [1, 1],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.dev.queue.writeTexture(
+      { texture: this.defaultNormalTex },
+      new Uint8Array([128, 128, 255, 255]),
+      { bytesPerRow: 4 },
+      [1, 1],
+    );
+
     this.defaultTexBg = this.dev.createBindGroup({
       layout: this.texBgl,
       entries: [
         { binding: 0, resource: this.defaultTex.createView() },
-        { binding: 1, resource: this.sampler },
+        { binding: 1, resource: this.defaultNormalTex.createView() },
+        { binding: 2, resource: this.sampler },
       ],
     });
 
@@ -429,33 +487,38 @@ export class DarkIronRenderer {
     let texBg = this.defaultTexBg;
     let isCachedTex = false;
 
+    // Resolve base color texture
+    let baseTex: GPUTexture | null = null;
     if (mesh.material?.baseColorPath) {
-      // Path-based: fetch via HTTP with caching
-      const url = `/textures/${mesh.material.baseColorPath}`;
-      const gpuTex = await this.getTextureByURL(url);
-      if (gpuTex) {
-        isCachedTex = true; // Don't destroy cached textures per-mesh
-        texBg = this.dev.createBindGroup({
-          layout: this.texBgl,
-          entries: [
-            { binding: 0, resource: gpuTex.createView() },
-            { binding: 1, resource: this.sampler },
-          ],
-        });
-      }
+      baseTex = await this.getTextureByURL(`/textures/${mesh.material.baseColorPath}`);
+      if (baseTex) isCachedTex = true;
     } else if (mesh.baseColorTex && mesh.baseColorTex.byteLength > 0) {
-      // Fallback: raw bytes (deprecated path)
       const gpuTex = await this.createTextureFromBytes(mesh.baseColorTex);
       if (gpuTex) {
         tex = gpuTex;
-        texBg = this.dev.createBindGroup({
-          layout: this.texBgl,
-          entries: [
-            { binding: 0, resource: gpuTex.createView() },
-            { binding: 1, resource: this.sampler },
-          ],
-        });
+        baseTex = gpuTex;
       }
+    }
+
+    // Resolve normal map texture
+    let normalTex: GPUTexture | null = null;
+    if (mesh.material?.normalPath) {
+      normalTex = await this.getTextureByURL(`/textures/${mesh.material.normalPath}`);
+    }
+
+    // Build bind group if we have at least a base color texture
+    if (baseTex) {
+      texBg = this.dev.createBindGroup({
+        layout: this.texBgl,
+        entries: [
+          { binding: 0, resource: baseTex.createView() },
+          {
+            binding: 1,
+            resource: (normalTex ?? (this.defaultNormalTex as GPUTexture)).createView(),
+          },
+          { binding: 2, resource: this.sampler },
+        ],
+      });
     }
 
     const ex = this.meshes.findIndex((m) => m.name === mesh.name);
@@ -565,6 +628,7 @@ export class DarkIronRenderer {
     this.gridBuf?.destroy();
     this.axisBuf?.destroy();
     this.defaultTex?.destroy();
+    this.defaultNormalTex?.destroy();
     this.dev?.destroy();
     console.log("[DarkIron Renderer] Destroyed");
   }
